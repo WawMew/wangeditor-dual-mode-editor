@@ -27,6 +27,7 @@
     /* 标题与正文：与编辑器内所见一致 */
     'h1,h2,h3,h4,h5{margin:24px 0 12px;line-height:1.4;font-weight:700}',
     'h1{font-size:26px}h2{font-size:22px}h3{font-size:18px}h4{font-size:16px}h5{font-size:15px}',
+    'p,li,td,th,h1,h2,h3,h4,h5{word-wrap:break-word;overflow-wrap:break-word}',
     'p{margin:14px 0}',
     'a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(43,108,255,.35)}',
     'a:hover{border-bottom-color:var(--accent)}',
@@ -58,9 +59,10 @@
       label: '默认模式',
       wrapperClass: 'doc doc--default',
       css: [
-        /* 朴素阅读态：白底、无卡片装饰、内容居中限宽 */
+        /* 朴素阅读态：白底、无卡片装饰、左侧自然对齐，避免大段空白 */
         'body{background:#fff}',
-        '.doc--default{max-width:860px;margin:0 auto;padding:36px 24px 72px}',
+        '.doc--default{max-width:920px;margin:0;padding:40px 48px 80px}',
+        '@media(max-width:680px){.doc--default{padding:24px 20px 60px}}',
         '.doc--default .doc-title{font-size:28px;line-height:1.35;margin:0 0 20px}'
       ].join('\n')
     },

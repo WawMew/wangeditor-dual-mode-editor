@@ -122,6 +122,13 @@
 
     global.document.addEventListener('selectionchange', onSelectionChange);
 
+    // 6) 全屏：隐藏应用自己的顶栏/状态栏/源码抽屉，让编辑器铺满视口；退出时还原
+    var docBody = global.document.body;
+    function onFullScreen() { docBody.classList.add('is-editor-fullscreen'); }
+    function onUnFullScreen() { docBody.classList.remove('is-editor-fullscreen'); }
+    editor.on('fullScreen', onFullScreen);
+    editor.on('unFullScreen', onUnFullScreen);
+
     var instance = {
       mode: mode,
       editor: editor,
@@ -143,6 +150,8 @@
 
       destroy: function () {
         global.document.removeEventListener('selectionchange', onSelectionChange);
+        try { editor.off('fullScreen', onFullScreen); } catch (e) { /* noop */ }
+        try { editor.off('unFullScreen', onUnFullScreen); } catch (e) { /* noop */ }
         if (typeof mode.onUnmount === 'function') {
           try { mode.onUnmount(instance); } catch (e) { /* noop */ }
         }
@@ -150,6 +159,7 @@
           // editor.destroy() 内部会一并销毁 textarea / toolbar / hoverbar
           if (editor && !editor.isDestroyed) editor.destroy();
         } catch (e) { /* noop */ }
+        docBody.classList.remove('is-editor-fullscreen');
         stage.innerHTML = '';
       }
     };

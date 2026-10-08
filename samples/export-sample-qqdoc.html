@@ -6,7 +6,7 @@
 <title></title>
 <meta name="generator" content="wangEditor v5 双模式富文本工作台" />
 <meta name="source-mode" content="qqdoc" />
-<meta name="exported-at" content="20261008-1614" />
+<meta name="exported-at" content="20261008-1646" />
 <style>
 :root{--ink:#262626;--ink-2:#5b6066;--line:#e3e6eb;--accent:#2b6cff;--code-bg:#f6f8fa}
 *{box-sizing:border-box}
@@ -16,6 +16,7 @@ body{color:var(--ink);font-size:16px;line-height:1.75;
   -webkit-font-smoothing:antialiased}
 h1,h2,h3,h4,h5{margin:24px 0 12px;line-height:1.4;font-weight:700}
 h1{font-size:26px}h2{font-size:22px}h3{font-size:18px}h4{font-size:16px}h5{font-size:15px}
+p,li,td,th,h1,h2,h3,h4,h5{word-wrap:break-word;overflow-wrap:break-word}
 p{margin:14px 0}
 a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(43,108,255,.35)}
 a:hover{border-bottom-color:var(--accent)}
@@ -71,6 +72,10 @@ const toolbar = createToolbar({ editor, selector: '#editor-toolbar' })
 <tr><td>正文起点</td><td>编辑区顶部</td><td>纸张顶部（无独立标题）</td></tr>
 </tbody>
 </table>
+<h2>四、超长文本换行</h2>
+<p>下面是一行没有空格的英文长串，用于验证导出后是否会像编辑器内一样自动换行：
+ThisIsAVeryLongContinuousEnglishWordUsedToTestWhetherTheExportedHtmlCanWrapCorrectlyWithoutOverflowingTheScreenLikeItDoesInsideTheEditor.
+如果在导出的 HTML 里这串文字超出了可视区域，说明 CSS 换行规则没有对齐编辑器。</p>
 <hr />
 <p>下面可以试试：选中部分文字后点「复制」（富文本会带格式进剪贴板），
 或点「导出 HTML」得到一份可独立打开的文档。</p>

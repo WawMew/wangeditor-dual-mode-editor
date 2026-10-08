@@ -3,13 +3,13 @@
 基于 [wangEditor v5](https://github.com/wangeditor-team/wangEditor)（`@wangeditor/editor@5.1.23`，已本地 vendor）
 构建的富文本编辑器，面向 **博客文章编辑** 与 **BBS 发帖 / 回复** 场景，提供两种可实时切换的编辑模式：
 
-| 模式 | 对齐的官方示例 | 核心还原点 |
+| 模式 | 参考官方示例 | 核心还原点 |
 | --- | --- | --- |
 | **默认模式** | <https://www.wangeditor.com/demo/index.html> | 全量工具栏（41 项）、`1px #ccc` 边框容器、工具栏与编辑区之间分隔线、编辑区固定 500px 且内部滚动、`Text length / Selected text length` 统计行 |
 | **仿腾讯文档** | <https://www.wangeditor.com/demo/like-qq-doc.html> | 工具栏贴顶整行居中（1350px / `#FCFCFC`）、隐藏「全屏」菜单（41 → 40 项）、浅灰画布 `#f5f5f5` + 居中 850px 白色纸张（描边 + 阴影）、**纸张内无独立标题栏、开头即正文**、`scroll: false` 页面级滚动、点击纸张空白处聚焦末尾 |
 
 两种模式**完全独立**：各自持有自己的文档与自动草稿，切换模式不传递内容。
-还原效果已由自动化自检逐条断言（**61 项全部通过**），详见 [`_selftest.html`](./_selftest.html)。
+还原效果已由自动化自检逐条断言（**64 项全部通过**），详见 [`_selftest.html`](./_selftest.html)。
 
 ---
 
@@ -43,13 +43,13 @@ python -m http.server 8321 --bind 127.0.0.1
 wangeditor-app/
 ├── index.html                  应用入口：顶栏（模式切换 + 操作区）/ 主区 / 状态栏 / 模态框
 ├── start-server.cmd            Windows 一键启动本地静态服务
-├── _selftest.html              自动化自检页（在 iframe 中加载 index.html 并断言 61 项）
+├── _selftest.html              自动化自检页（在 iframe 中加载 index.html 并断言 64 项）
 ├── README.md                   本文档
 │
 ├── css/
 │   ├── base.css                应用外壳：设计变量、顶栏、按钮、抽屉、模态框、Toast、响应式
-│   ├── mode-default.css        「默认模式」皮肤（对齐 index 示例）
-│   └── mode-qqdoc.css          「仿腾讯文档」皮肤（对齐 like-qq-doc 示例）
+│   ├── mode-default.css        「默认模式」皮肤
+│   └── mode-qqdoc.css          「仿腾讯文档」皮肤
 │
 ├── js/
 │   ├── editor-factory.js       编辑器实例工厂：渲染模式模板 → 合并配置 → createEditor/createToolbar → 销毁
@@ -172,6 +172,10 @@ switchMode(nextModeId)
   下次打开按「上次所处的模式」恢复该模式自己的草稿（状态栏显示「自动保存 HH:MM」/「已恢复草稿 HH:MM」）。
 - **状态栏**：当前模式、字数、选中字数、草稿状态、操作提示。
 - **快捷键**：`Ctrl/Cmd + S` 打开存档、`Esc` 关闭模态框。
+- **全屏编辑（默认模式）**：点击工具栏「全屏」按钮后，编辑器容器铺满视口，
+  应用自己的顶栏、状态栏、源码抽屉全部隐藏；退出全屏后自动还原。
+  实现：`editor.on('fullScreen' / 'unFullScreen')` 给 `<body>` 切换 `is-editor-fullscreen` 类，
+  同时提升 `.w-e-full-screen-container` 的 `z-index` 并把编辑区设为 `flex:1`。
 - **图片 / 视频**：无服务端也能跑 —— 本地图片 < 10MB 走 wangEditor 的 base64 直插，
   更大的与本地视频通过 `MENU_CONF.uploadImage/uploadVideo.customUpload` 转为 dataURL 插入（大小上限 10MB / 20MB）；
   「网络图片」「插入视频」按 URL 输入，开箱即用。
@@ -202,9 +206,15 @@ switchMode(nextModeId)
 | 外层节点 | `<article class="doc doc--default">` | `<article class="doc doc--qqdoc">` |
 | `<body>` 标识 | `data-mode="default"` | `data-mode="qqdoc"` |
 | 背景 | 纯白 `#fff`，无卡片装饰 | 浅灰 `#f2f2f2` 画布 |
-| 内容区 | 居中限宽 860px，朴素阅读态 | 居中 **850px 白色纸张** + `0 2px 10px rgba(0,0,0,.12)` 阴影（与编辑器内纸张同尺寸） |
+| 内容区 | **左侧自然对齐**，max-width 920px，舒适页边距（40px / 48px），避免大段居中空白 | 居中 **850px 白色纸张** + `0 2px 10px rgba(0,0,0,.12)` 阴影（与编辑器内纸张同尺寸） |
 
 导出的文件保留 `data-mode`，便于再次导入 / 二次加工时识别来源模式。
+
+**③ 超长文本自动换行**
+
+wangEditor 编辑区对 `[data-slate-editor]` 设置了 `word-wrap:break-word; white-space:pre-wrap`，
+所以长英文单词 / 长链接在编辑器里会自动换行。导出 HTML 通过 `BASE_CSS` 给 `p, li, td, th, h1~h5`
+补上同样的 `word-wrap:break-word; overflow-wrap:break-word`，保证导出的阅读态不会溢出屏幕。
 实现见 `js/features/exporter.js` 的 `MODE_SKINS`（`BASE_CSS` 为两模式共享的排版规则）。
 
 > 历史问题：早期版本会在正文写死一行 `wangEditor v5 · …模式 · 导出于 …` 水印，并把空标题填成「未命名文档」；
@@ -220,15 +230,16 @@ switchMode(nextModeId)
 # 浏览器打开 http://127.0.0.1:8321/_selftest.html
 ```
 
-自检页在 `<iframe>` 中加载真实的 `index.html?demo=1`，跨模式断言 61 项，覆盖：
+自检页在 `<iframe>` 中加载真实的 `index.html?demo=1`，跨模式断言 64 项，覆盖：
 依赖与初始化、默认模式的 DOM 与 `scroll: true`、`setHtml/getHtml` 往返、统计口径、
 **导出内容一致性**（空文档不注入「未命名文档」、无水印行、正文与 `getHtml()` 逐字一致）与
 **导出模式独立性**（两模式导出互不相同、外壳 `doc--default` / `doc--qqdoc`、`data-mode`、
-白底 vs 灰底 + 850px 纸张各自正确）、localStorage 增删查、
-**模式内容独立性**（qqdoc 有自己的内容、默认模式的编辑不进入 qqdoc、切回后各自内容仍在、
-自动草稿按模式分 key 存储）、qqdoc 纸张内**无**标题栏、纸张宽度 850px /
+白底 vs 灰底 + 850px 纸张各自正确、默认导出左侧对齐、超长文本带换行样式）、
+localStorage 增删查、**模式内容独立性**（qqdoc 有自己的内容、默认模式的编辑不进入 qqdoc、
+切回后各自内容仍在、自动草稿按模式分 key 存储）、qqdoc 纸张内**无**标题栏、纸张宽度 850px /
 工具栏背景 `#FCFCFC` / 按钮数 41 → 40（仅差 fullScreen）/ `scroll: false`、
-实例隔离、剪贴板 API、运行期无未捕获错误。当前结果：**61 passed / 0 failed**。
+模式按钮上无「对齐xxx示例」注释、实例隔离、剪贴板 API、运行期无未捕获错误。
+当前结果：**64 passed / 0 failed**。
 
 ---
 

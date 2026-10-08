@@ -39,6 +39,10 @@
       '</tbody>',
       '</table>',
 
+      '<h2>四、超长文本换行</h2>',
+      '<p>下面是一行没有空格的英文长串，用于验证导出后是否会像编辑器内一样自动换行：',
+      'ThisIsAVeryLongContinuousEnglishWordUsedToTestWhetherTheExportedHtmlCanWrapCorrectlyWithoutOverflowingTheScreenLikeItDoesInsideTheEditor.',
+      '如果在导出的 HTML 里这串文字超出了可视区域，说明 CSS 换行规则没有对齐编辑器。</p>',
       '<hr />',
       '<p>下面可以试试：选中部分文字后点「复制」（富文本会带格式进剪贴板），',
       '或点「导出 HTML」得到一份可独立打开的文档。</p>',

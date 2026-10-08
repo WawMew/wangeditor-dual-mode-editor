@@ -1,6 +1,6 @@
 /* ==========================================================================
    default.mode.js — 「默认模式」定义
-   对齐官方示例 https://www.wangeditor.com/demo/index.html
+   设计参考官方示例 https://www.wangeditor.com/demo/index.html
      · 全量工具栏（toolbarConfig 为空对象，交给 wangEditor 默认配置）
      · 1px 边框容器包裹「工具栏 + 编辑区」，两者之间 1px 分隔线
      · 编辑区固定高度，超出部分由编辑器内部滚动（scroll: true）
@@ -16,8 +16,7 @@
   Modes['default'] = {
     id: 'default',
     label: '默认模式',
-    tagline: '官方 index 示例',
-    description: '全量工具栏 + 边框容器，编辑器内部滚动，功能与官方 demo 一致。',
+    description: '全量工具栏 + 边框容器，编辑器内部滚动，适合博客与 BBS 长文编辑。',
 
     template: [
       '<div class="default-layout">',

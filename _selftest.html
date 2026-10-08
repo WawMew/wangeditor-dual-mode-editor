@@ -134,6 +134,12 @@
         emptyDefault.indexOf('#f2f2f2') < 0);
       check('仿腾讯文档导出为灰底 + 850px 白纸',
         emptyQqdoc.indexOf('#f2f2f2') >= 0 && emptyQqdoc.indexOf('width:850px') >= 0);
+      check('默认模式导出内容左侧对齐（不再居中产生大段空白）',
+        emptyDefault.indexOf('margin:0 auto') < 0 && emptyDefault.indexOf('margin:0;') >= 0);
+      check('导出 HTML 包含换行样式（超长文本不溢出屏幕）',
+        emptyDefault.indexOf('overflow-wrap:break-word') >= 0);
+      check('模式按钮上不再出现「对齐xxx示例」的注释文案',
+        !d.querySelector('.mode-btn-sub'));
 
       /* ---------- E. 本地存储 ---------- */
       var slot = w.AppStorage.saveSlot('自检存档', { html: html, title: '自检', mode: 'default' });

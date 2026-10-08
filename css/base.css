@@ -75,7 +75,7 @@ body {
   letter-spacing: .5px;
 }
 
-.brand-text { display: flex; flex-direction: column; line-height: 1.35; }
+.brand-text { display: flex; align-items: center; }
 .brand-text strong { font-size: 14px; font-weight: 600; }
 
 /* 模式切换（分段控件） */
@@ -89,29 +89,25 @@ body {
 }
 
 .mode-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  padding: 5px 14px;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: var(--text-2);
   cursor: pointer;
   font-family: inherit;
-  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
   transition: background .18s, color .18s, box-shadow .18s;
 }
 .mode-btn:hover { color: var(--text); background: rgba(43, 108, 255, .06); }
-.mode-btn-title { font-size: 13px; font-weight: 600; }
-.mode-btn-sub { font-size: 10px; color: var(--text-3); }
 .mode-btn.is-active {
   background: var(--panel);
   color: var(--brand);
   box-shadow: var(--shadow-1);
 }
-.mode-btn.is-active .mode-btn-sub { color: var(--brand); opacity: .7; }
 
 /* 操作区 */
 .app-actions {
@@ -396,7 +392,30 @@ body {
   .app-actions { gap: 4px; }
   .btn { padding: 0 9px; font-size: 12px; }
 }
+/* ============================ 编辑器全屏（默认模式） ============================ */
+/* wangEditor 全屏会给 .default-shell 加上 .w-e-full-screen-container，此时需要：
+   1) 隐藏应用自己的顶栏、状态栏、源码抽屉等控件；
+   2) 让全屏容器盖住顶栏（.app-bar z-index:20），并把编辑区撑满剩余空间。 */
+body.is-editor-fullscreen .app-bar,
+body.is-editor-fullscreen .app-status,
+body.is-editor-fullscreen .source-drawer { display: none; }
+
+body.is-editor-fullscreen .app-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.w-e-full-screen-container {
+  z-index: 1000 !important;
+}
+
+.w-e-full-screen-container .default-textarea,
+.w-e-full-screen-container .qqdoc-textarea {
+  flex: 1 !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+
 @media (max-width: 900px) {
-  .mode-btn-sub { display: none; }
   .source-drawer.is-open { width: 100%; max-width: none; position: absolute; inset: 0; z-index: 30; }
 }

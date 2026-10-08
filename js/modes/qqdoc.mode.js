@@ -1,6 +1,6 @@
 /* ==========================================================================
    qqdoc.mode.js — 「仿腾讯文档模式」定义
-   对齐官方示例 https://www.wangeditor.com/demo/like-qq-doc.html
+   设计参考官方示例 https://www.wangeditor.com/demo/like-qq-doc.html
      · 工具栏贴顶、整行居中（1350px / #FCFCFC），排除「全屏」菜单
      · 浅灰画布 + 居中 850px 白色纸张（描边 + 阴影）
      · 纸张内**没有独立标题栏**，开头即正文
@@ -17,7 +17,6 @@
   Modes['qqdoc'] = {
     id: 'qqdoc',
     label: '仿腾讯文档',
-    tagline: 'like-qq-doc 示例',
     description: '在线文档式版面：纸张居中、页面级滚动，适合沉浸式长文写作。',
 
     template: [
