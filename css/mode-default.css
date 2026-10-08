@@ -1,0 +1,64 @@
+/* ==========================================================================
+   mode-default.css — 「默认模式」皮肤
+   结构与关键数值对齐官方示例：https://www.wangeditor.com/demo/index.html
+     · 外层 1px 实线边框容器
+     · 工具栏与编辑区之间 1px 分隔线
+     · 编辑区固定高度 500px，内容超出时由编辑器内部滚动
+   ========================================================================== */
+
+body[data-mode="default"] { background: var(--app-bg); }
+
+.default-layout {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--app-bg);
+}
+
+/* 官方示例：<div style="border: 1px solid #ccc;"> 包裹工具栏与编辑区 */
+.default-shell {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-1);
+}
+
+/* 官方示例：#toolbar-container { border-bottom: 1px solid #ccc; } */
+.default-toolbar {
+  flex: none;
+  border-bottom: 1px solid #ccc;
+  background: #fff;
+}
+
+/* 官方示例：#editor-text-area { height: 500px; } —— 超出时编辑器内部滚动 */
+.default-textarea {
+  flex: none;
+  height: 500px;
+  min-height: 0;
+}
+
+/* 大屏下适度加高，体验更好，但不改变「固定高度 + 内部滚动」的交互模型 */
+@media (min-height: 960px) {
+  .default-textarea { height: 620px; }
+}
+
+/* 官方示例的内容统计行 */
+.default-stats {
+  margin: 0;
+  padding: 8px 12px;
+  background: #f1f1f1;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.default-stats b { color: var(--text); font-weight: 600; }

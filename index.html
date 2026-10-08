@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-app-mode="default">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>wangEditor 双模式富文本编辑器 · 博客 / BBS</title>
+  <meta name="generator" content="wangEditor v5 (双模式工作台)" />
+  <!-- 1) wangEditor 官方样式（本地 vendor，离线可用） -->
+  <link rel="stylesheet" href="./vendor/wangeditor/style.css" />
+  <!-- 2) 应用样式：公共 / 默认模式 / 仿腾讯文档模式 -->
+  <link rel="stylesheet" href="./css/base.css" />
+  <link rel="stylesheet" href="./css/mode-default.css" />
+  <link rel="stylesheet" href="./css/mode-qqdoc.css" />
+</head>
+<body data-mode="default">
+  <div class="app">
+    <!-- ===================== 顶栏：品牌 + 模式切换 + 操作区 ===================== -->
+    <header class="app-bar">
+      <div class="brand">
+        <span class="brand-mark">W</span>
+        <span class="brand-text">
+          <strong>wangEditor 富文本工作台</strong>
+          <em>博客文章 · BBS 发帖 / 回复</em>
+        </span>
+      </div>
+
+      <nav class="mode-switch" role="tablist" aria-label="编辑模式切换">
+        <button class="mode-btn" type="button" role="tab" data-mode="default" aria-selected="true">
+          <span class="mode-btn-title">默认模式</span>
+          <span class="mode-btn-sub">对齐官方 index 示例</span>
+        </button>
+        <button class="mode-btn" type="button" role="tab" data-mode="qqdoc" aria-selected="false">
+          <span class="mode-btn-title">仿腾讯文档</span>
+          <span class="mode-btn-sub">对齐 like-qq-doc 示例</span>
+        </button>
+      </nav>
+
+      <div class="app-actions">
+        <button class="btn btn-primary" type="button" data-action="copy" title="复制富文本内容（可粘贴到 Word / 公众号）">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 16H8V7h11v14Z"/></svg>
+          复制
+        </button>
+        <button class="btn" type="button" data-action="copy-html" title="复制 HTML 源码字符串">复制 HTML</button>
+        <button class="btn" type="button" data-action="preview" title="以只读文档形式预览最终效果">预览</button>
+        <button class="btn" type="button" data-action="export" title="导出为独立可直接打开的 .html 文件">导出 HTML</button>
+        <button class="btn" type="button" data-action="save" title="保存到浏览器本地（localStorage）">保存</button>
+        <span class="action-split" aria-hidden="true"></span>
+        <button class="btn btn-ghost" type="button" data-action="import">导入</button>
+        <button class="btn btn-ghost" type="button" data-action="sample">示例</button>
+        <button class="btn btn-ghost" type="button" data-action="clear">清空</button>
+        <button class="btn btn-ghost" type="button" data-action="toggle-source" aria-expanded="false">源码</button>
+      </div>
+    </header>
+
+    <!-- ===================== 主区：编辑器舞台 + 源码抽屉 ===================== -->
+    <div class="app-body">
+      <!-- 两种模式的 DOM 模板由 js/modes/*.mode.js 注入到这里，同一时刻只存在一套 -->
+      <main id="editor-stage" class="editor-stage"></main>
+
+      <aside id="source-drawer" class="source-drawer" aria-hidden="true">
+        <div class="drawer-head">
+          <strong>HTML 源码</strong>
+          <div class="drawer-tools">
+            <span class="drawer-size" data-status="source-size">0 B</span>
+            <button class="btn btn-mini" type="button" data-action="refresh-source">刷新</button>
+            <button class="btn btn-mini" type="button" data-action="copy-source">复制</button>
+            <button class="btn btn-mini" type="button" data-action="toggle-source">收起</button>
+          </div>
+        </div>
+        <pre class="drawer-code"><code data-role="source-code"></code></pre>
+      </aside>
+    </div>
+
+    <!-- ===================== 状态栏 ===================== -->
+    <footer class="app-status">
+      <span class="status-item">模式 <b data-status="mode">默认模式</b></span>
+      <span class="status-item">字数 <b data-status="total">0</b></span>
+      <span class="status-item">选中 <b data-status="selected">0</b></span>
+      <span class="status-item">草稿 <b data-status="draft">未保存</b></span>
+      <span class="status-spacer"></span>
+      <span class="status-hint" data-status="hint">就绪</span>
+    </footer>
+  </div>
+
+  <!-- ===================== 模态框（预览 / 本地草稿 / 导入） ===================== -->
+  <div id="modal-root" class="modal-root" hidden>
+    <div class="modal-backdrop" data-modal-close></div>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-head">
+        <strong id="modal-title">预览</strong>
+        <div class="modal-tools" id="modal-tools"></div>
+        <button class="modal-close" type="button" data-modal-close aria-label="关闭">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+  <input type="file" id="import-file" accept=".html,.htm,text/html" hidden />
+
+  <!-- ===================== 脚本：依赖 → 能力 → 模式 → 引导 ===================== -->
+  <script src="./vendor/wangeditor/index.js"></script>
+  <script src="./js/features/storage.js"></script>
+  <script src="./js/features/clipboard.js"></script>
+  <script src="./js/features/exporter.js"></script>
+  <script src="./js/editor-factory.js"></script>
+  <script src="./js/modes/default.mode.js"></script>
+  <script src="./js/modes/qqdoc.mode.js"></script>
+  <script src="./js/content/sample.js"></script>
+  <script src="./js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,106 @@
+/* ==========================================================================
+   mode-qqdoc.css — 「仿腾讯文档模式」皮肤
+   结构与关键数值对齐官方示例：https://www.wangeditor.com/demo/like-qq-doc.html
+     · 工具栏贴顶、整行居中（官方 1350px / #FCFCFC 背景），隐藏「全屏」菜单
+     · 内容区浅灰底 + 居中「纸张」（官方 850px、白底、描边 + 阴影）
+     · 纸张顶部为 30px 大标题输入框
+     · 编辑器配置 scroll:false —— 滚动交给外层内容区，官方 min-height 900px
+   ========================================================================== */
+
+body[data-mode="qqdoc"] { background: #f5f5f5; }
+
+.qqdoc-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #f5f5f5;
+}
+
+/* ---- 顶部工具栏条（官方 #editor-toolbar 外层分隔线 + #FCFCFC 背景） ---- */
+.qqdoc-toolbar-bar {
+  flex: none;
+  border-bottom: 1px solid #e8e8e8;
+  background: #fcfcfc;
+}
+
+.qqdoc-toolbar {
+  width: 1350px;
+  max-width: 100%;
+  margin: 0 auto;
+  background: #fcfcfc;
+}
+
+/* ---- 内容区：浅灰画布，页面级滚动（官方 #content 的 overflow-y:auto） ---- */
+.qqdoc-canvas {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: rgb(245, 245, 245);
+  position: relative;
+}
+
+/* ---- 纸张（官方 #editor-container 数值原样保留） ---- */
+.qqdoc-page {
+  width: 850px;
+  max-width: calc(100% - 40px);
+  margin: 30px auto 150px;
+  background: #fff;
+  padding: 20px 50px 50px;
+  border: 1px solid #e8e8e8;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .12);
+}
+
+/* ---- 标题（官方 #title-container 数值原样保留） ---- */
+.qqdoc-title {
+  padding: 20px 0;
+  border-bottom: 1px solid #e8e8e8;
+}
+.qqdoc-title input {
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 30px;
+  line-height: 1;
+  color: #333;
+}
+.qqdoc-title input::placeholder { color: #c2c6cc; }
+
+/* ---- 编辑区（官方 #editor-text-area { min-height:900px; margin-top:20px }） ---- */
+.qqdoc-textarea {
+  min-height: 900px;
+  margin-top: 20px;
+}
+
+/* ---- scroll:false 的落地：让编辑器高度随内容自然增长，避免内容溢出纸张 ---- */
+body[data-mode="qqdoc"] .qqdoc-textarea .w-e-text-container {
+  height: auto;
+  background: transparent;
+}
+body[data-mode="qqdoc"] .qqdoc-textarea .w-e-scroll {
+  height: auto;
+  overflow: visible;
+}
+body[data-mode="qqdoc"] .qqdoc-textarea [data-slate-editor] {
+  min-height: 120px;
+  padding: 0;
+}
+body[data-mode="qqdoc"] .qqdoc-textarea .w-e-text-placeholder {
+  left: 0;
+  top: 2px;
+}
+
+/* 字体与行距：更接近在线文档的阅读体感 */
+body[data-mode="qqdoc"] .qqdoc-textarea [data-slate-editor] {
+  font-size: 15px;
+  line-height: 1.75;
+}
+body[data-mode="qqdoc"] .qqdoc-textarea [data-slate-editor] p { margin: 12px 0; }
+
+/* 纸张窄屏时收紧内边距 */
+@media (max-width: 900px) {
+  .qqdoc-page { padding: 16px 22px 36px; }
+}
