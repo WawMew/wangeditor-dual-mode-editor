@@ -296,9 +296,10 @@
 
   /* ======================= 动作实现 ======================= */
 
+  /** 导出载荷：标题可为空（空则不输出标题节点），正文原样来自编辑器 */
   function documentPayload() {
     return {
-      title: currentTitle() || '未命名文档',
+      title: currentTitle(),
       html: currentHtml(),
       mode: state.modeId
     };
@@ -370,7 +371,12 @@
   function actionExport() {
     var payload = documentPayload();
     var html = Exporter.buildDocument(payload);
-    var filename = Exporter.safeFilename(payload.title + '-' + Exporter.timestamp(), '.html');
+
+    // 文件名：有标题用「标题-时间」，无标题用「文档-时间」，不注入「未命名文档」
+    var stamp = Exporter.timestamp();
+    var base = payload.title ? (payload.title + '-' + stamp) : ('文档-' + stamp);
+    var filename = Exporter.safeFilename(base, '.html', '文档-' + stamp);
+
     Exporter.download(filename, html, 'text/html');
     toast('已导出：' + filename);
     setHint('导出文件：' + filename);
@@ -465,7 +471,7 @@
     input.type = 'text';
     input.className = 'save-input';
     input.placeholder = '存档名称，例如：博客-第一篇';
-    input.value = currentTitle() || ('未命名文档 ' + Exporter.timestamp());
+    input.value = currentTitle() || ('文档-' + Exporter.timestamp());
     row.appendChild(input);
 
     var listHost = doc.createElement('div');

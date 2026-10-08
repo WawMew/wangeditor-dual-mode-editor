@@ -4,26 +4,29 @@
      download(filename, content, mime)  : 触发浏览器下载
      previewSrcdoc(...)                 : 供预览模态框的 iframe.srcdoc 使用
      prettyHtml(html)                   : HTML 源码格式化（仅用于展示）
+
+   设计原则
+   1) 导出内容 = 编辑器内容。除用户输入的标题外，不注入任何文案（无「未命名文档」、
+      无工具名/时间水印）。生成器与时间等元信息只写进 <head> 的 meta，不进正文。
+   2) 两种模式各自独立：正文 HTML 相同（模式切换本就保持内容），差异体现在文档
+      外壳与版式上 —— 默认模式为朴素白底文档，仿腾讯文档模式为「灰底 + 850px 白纸」。
    ========================================================================== */
 (function (global) {
   'use strict';
 
   var doc = global.document;
 
-  /* ---------- 阅读态样式：与编辑器内显示保持一致，导出后可独立阅读 ---------- */
-  var READER_CSS = [
+  /* ---------- 共享排版样式（两种模式通用） ---------- */
+  var BASE_CSS = [
     ':root{--ink:#262626;--ink-2:#5b6066;--line:#e3e6eb;--accent:#2b6cff;--code-bg:#f6f8fa}',
     '*{box-sizing:border-box}',
     'html,body{margin:0;padding:0}',
-    'body{background:#f5f5f5;color:var(--ink);font-size:16px;line-height:1.75;',
-    '  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",Arial,sans-serif}',
-    '.doc{max-width:860px;margin:32px auto 80px;background:#fff;padding:48px 56px;border-radius:6px;',
-    '  box-shadow:0 2px 12px rgba(0,0,0,.08)}',
-    '.doc-title{font-size:30px;line-height:1.35;margin:0 0 8px;font-weight:700}',
-    '.doc-meta{margin:0 0 28px;padding-bottom:16px;border-bottom:1px solid var(--line);',
-    '  color:#8f959e;font-size:12px;font-family:Consolas,Monaco,monospace}',
+    'body{color:var(--ink);font-size:16px;line-height:1.75;',
+    '  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",Arial,sans-serif;',
+    '  -webkit-font-smoothing:antialiased}',
+    /* 标题与正文：与编辑器内所见一致 */
     'h1,h2,h3,h4,h5{margin:24px 0 12px;line-height:1.4;font-weight:700}',
-    'h1{font-size:28px}h2{font-size:22px}h3{font-size:18px}h4{font-size:16px}h5{font-size:15px}',
+    'h1{font-size:26px}h2{font-size:22px}h3{font-size:18px}h4{font-size:16px}h5{font-size:15px}',
     'p{margin:14px 0}',
     'a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(43,108,255,.35)}',
     'a:hover{border-bottom-color:var(--accent)}',
@@ -41,9 +44,44 @@
     'th{background:#f6f8fa;font-weight:700;text-align:center}',
     '[data-w-e-type="video"]{max-width:100%}',
     'video{max-width:100%}',
-    '@media(max-width:900px){.doc{padding:24px 20px;margin:16px auto 40px}}',
-    '@media print{body{background:#fff}.doc{box-shadow:none;margin:0;padding:0;max-width:none}}'
+    /* 文档标题：仅当用户填了标题才会输出该节点 */
+    '.doc-title{margin:0;font-weight:700}',
+    '@media print{body{background:#fff}.doc{box-shadow:none;margin:0;padding:0;width:auto;max-width:none}}'
   ].join('\n');
+
+  /* ---------- 各模式的文档外壳 ----------
+     wrapperClass 用同一套共享类 .doc，再叠加模式修饰类；
+     body[data-mode] 便于导出的文件被再次识别 / 二次加工。            */
+  var MODE_SKINS = {
+    'default': {
+      id: 'default',
+      label: '默认模式',
+      wrapperClass: 'doc doc--default',
+      css: [
+        /* 朴素阅读态：白底、无卡片装饰、内容居中限宽 */
+        'body{background:#fff}',
+        '.doc--default{max-width:860px;margin:0 auto;padding:36px 24px 72px}',
+        '.doc--default .doc-title{font-size:28px;line-height:1.35;margin:0 0 20px}'
+      ].join('\n')
+    },
+    'qqdoc': {
+      id: 'qqdoc',
+      label: '仿腾讯文档模式',
+      wrapperClass: 'doc doc--qqdoc',
+      css: [
+        /* 在线文档态：浅灰画布 + 850px 白色纸张（对齐编辑器内纸张尺寸） */
+        'body{background:#f2f2f2}',
+        '.doc--qqdoc{width:850px;max-width:100%;margin:40px auto 80px;background:#fff;',
+        '  padding:44px 60px 64px;box-shadow:0 2px 10px rgba(0,0,0,.12)}',
+        '.doc--qqdoc .doc-title{font-size:30px;line-height:1.35;margin:0 0 24px}',
+        '@media(max-width:900px){.doc--qqdoc{width:100%;margin:0;padding:24px 20px 48px;box-shadow:none}}'
+      ].join('\n')
+    }
+  };
+
+  function resolveSkin(mode) {
+    return MODE_SKINS[mode] || MODE_SKINS['default'];
+  }
 
   /* ---------- 文本工具 ---------- */
 
@@ -56,14 +94,14 @@
       .replace(/'/g, '&#39;');
   }
 
-  /** 把标题转成安全的文件名 */
-  function safeFilename(name, ext) {
+  /** 把标题转成安全的文件名（不再注入「未命名文档」，由调用方决定空名回退） */
+  function safeFilename(name, ext, fallback) {
     var base = String(name == null ? '' : name)
       .replace(/[\\/:*?"<>|\r\n\t]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 60);
-    if (!base) base = '未命名文档';
+    if (!base) base = String(fallback == null ? '' : fallback).trim();
     return base + (ext || '');
   }
 
@@ -129,34 +167,40 @@
 
   function buildDocument(options) {
     options = options || {};
-    var title = options.title || '未命名文档';
-    var body = options.html || '<p><br></p>';
-    var mode = options.mode === 'qqdoc' ? '仿腾讯文档模式' : '默认模式';
+    var skin = resolveSkin(options.mode);
+
+    // 标题：空即不输出，绝不注入占位文案
+    var title = String(options.title == null ? '' : options.title).trim();
+    // 正文：原样来自编辑器 getHtml()，不做任何包装或改写
+    var body = options.html == null ? '' : String(options.html);
     var stamp = timestamp();
 
-    return [
+    var out = [
       '<!DOCTYPE html>',
       '<html lang="zh-CN">',
       '<head>',
       '<meta charset="UTF-8" />',
       '<meta name="viewport" content="width=device-width, initial-scale=1" />',
       '<title>' + escapeHtml(title) + '</title>',
+      /* 元信息只留在 head，不进正文 */
       '<meta name="generator" content="wangEditor v5 双模式富文本工作台" />',
+      '<meta name="source-mode" content="' + escapeHtml(skin.id) + '" />',
       '<meta name="exported-at" content="' + stamp + '" />',
-      '<meta name="source-mode" content="' + escapeHtml(mode) + '" />',
       '<style>',
-      READER_CSS,
+      BASE_CSS,
+      skin.css,
       '</style>',
       '</head>',
-      '<body>',
-      '<article class="doc">',
-      '<h1 class="doc-title">' + escapeHtml(title) + '</h1>',
-      '<p class="doc-meta">wangEditor v5 · ' + escapeHtml(mode) + ' · 导出于 ' + stamp + '</p>',
-      body,
-      '</article>',
-      '</body>',
-      '</html>'
-    ].join('\n');
+      '<body data-mode="' + escapeHtml(skin.id) + '">',
+      '<article class="' + skin.wrapperClass + '">'
+    ];
+
+    if (title) {
+      out.push('<h1 class="doc-title">' + escapeHtml(title) + '</h1>');
+    }
+
+    out.push(body, '</article>', '</body>', '</html>');
+    return out.join('\n');
   }
 
   /** 预览用：与导出文件同源同构 */
@@ -185,7 +229,9 @@
   }
 
   global.AppExporter = {
-    READER_CSS: READER_CSS,
+    BASE_CSS: BASE_CSS,
+    MODE_SKINS: MODE_SKINS,
+    resolveSkin: resolveSkin,
     escapeHtml: escapeHtml,
     safeFilename: safeFilename,
     timestamp: timestamp,

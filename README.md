@@ -8,7 +8,7 @@
 | **默认模式** | <https://www.wangeditor.com/demo/index.html> | 全量工具栏（41 项）、`1px #ccc` 边框容器、工具栏与编辑区之间分隔线、编辑区固定 500px 且内部滚动、`Text length / Selected text length` 统计行 |
 | **仿腾讯文档** | <https://www.wangeditor.com/demo/like-qq-doc.html> | 工具栏贴顶整行居中（1350px / `#FCFCFC`）、隐藏「全屏」菜单（41 → 40 项）、浅灰画布 `#f5f5f5` + 居中 850px 白色纸张（描边 + 阴影）、纸张顶部 30px 大标题输入框、`scroll: false` 页面级滚动、点击纸张空白处聚焦末尾 |
 
-两种模式的还原效果已由自动化自检逐条断言（**42 项全部通过**），详见 [`_selftest.html`](./_selftest.html)。
+两种模式的还原效果已由自动化自检逐条断言（**56 项全部通过**），详见 [`_selftest.html`](./_selftest.html)。
 
 ---
 
@@ -42,7 +42,7 @@ python -m http.server 8321 --bind 127.0.0.1
 wangeditor-app/
 ├── index.html                  应用入口：顶栏（模式切换 + 操作区）/ 主区 / 状态栏 / 模态框
 ├── start-server.cmd            Windows 一键启动本地静态服务
-├── _selftest.html              自动化自检页（在 iframe 中加载 index.html 并断言 42 项）
+├── _selftest.html              自动化自检页（在 iframe 中加载 index.html 并断言 56 项）
 ├── README.md                   本文档
 │
 ├── css/
@@ -58,7 +58,7 @@ wangeditor-app/
 │   │   └── qqdoc.mode.js       「仿腾讯文档模式」定义
 │   ├── features/
 │   │   ├── clipboard.js        剪贴板：富文本（text/html + text/plain）与纯文本，含 execCommand 回退
-│   │   ├── exporter.js         导出：独立 HTML 文档生成、下载、HTML 源码格式化、字节数格式化
+│   │   ├── exporter.js         导出：按模式生成独立 HTML 文档、下载、HTML 源码格式化、字节数格式化
 │   │   └── storage.js          本地持久化：自动草稿 + 命名存档（localStorage）
 │   └── content/
 │       └── sample.js           示例内容（「示例」按钮 / `?demo=1`）
@@ -68,8 +68,10 @@ wangeditor-app/
 │   └── style.css               官方样式
 │
 ├── samples/
-│   └── export-sample.html      「导出 HTML」产物的示例（独立可打开，内嵌阅读态样式）
-└── _shots/                     两种模式与导出效果的验证截图
+│   ├── export-sample-default.html  「默认模式」导出产物示例（朴素白底文档）
+│   ├── export-sample-qqdoc.html    「仿腾讯文档」导出产物示例（灰底 + 850px 白纸）
+│   └── export-sample-empty.html    空文档导出示例（无任何注入文案）
+└── _shots/                     两种模式、导出效果与自检结果的验证截图
 ```
 
 **加载顺序**（全部为传统 `<script>`，无模块、无构建，保证 `file://` 双击可用）：
@@ -146,8 +148,8 @@ switchMode(nextModeId)
 | --- | --- | --- |
 | **复制** | 有选中内容则复制选区，否则复制全文；同时写入 `text/html` + `text/plain`，粘到 Word / 公众号保留格式 | `AppClipboard.copyRich()`；异步 Clipboard API 不可用时回退 `execCommand('copy')` |
 | **复制 HTML** | 复制原始 HTML 源码字符串 | `AppClipboard.copyPlain()` |
-| **预览** | 模态框内以只读文档渲染「导出后的最终效果」，可导出 / 新窗口打开 / 复制源码 | `AppExporter.buildDocument()` → `iframe.srcdoc` |
-| **导出 HTML** | 下载 `标题-年月日-时分.html`，独立可打开、内嵌阅读态样式与打印样式 | `AppExporter.buildDocument()` + `download()` |
+| **预览** | 模态框内以只读文档渲染「导出后的最终效果」，可导出 / 新窗口打开 / 复制源码 | `AppExporter.buildDocument()` → `iframe.srcdoc`（与导出文件同源同构） |
+| **导出 HTML** | 下载独立可打开的 `.html`：有标题为 `标题-年月日-时分.html`，无标题为 `文档-年月日-时分.html` | `AppExporter.buildDocument()` + `download()`；内容与当前模式见 [4.1](#41-导出规则内容一致--模式独立) |
 | **保存** | 打开「本地存档」模态框：命名保存当前文档、列出历史存档（打开 / 删除） | `AppStorage.saveSlot/listSlots/removeSlot`（localStorage，同名覆盖） |
 | **导入** | 粘贴 HTML 源码或选择本地 `.html` 文件；若为完整文档会自动提取 `<title>` / `.doc-title` 与 `body` 内容 | `DOMParser` + `editor.setHtml()` |
 | **示例** | 注入内置示例内容 | `js/content/sample.js` |
@@ -165,6 +167,38 @@ switchMode(nextModeId)
   「网络图片」「插入视频」按 URL 输入，开箱即用。
 - **调试入口**：`window.App.switchMode('qqdoc')`、`window.App.state`、`window.App.errors`。
 
+### 4.1 导出规则：内容一致 + 模式独立
+
+「预览」与「导出 HTML」共用同一个 `AppExporter.buildDocument({ title, html, mode })`，遵循两条硬规则。
+
+**① 导出内容 = 编辑器内容，不做任何注入**
+
+| 情况 | 行为 |
+| --- | --- |
+| 标题为空 | 正文**不输出** `<h1 class="doc-title">`，也不出现「未命名文档」之类的占位文案 |
+| 标题非空 | 在正文顶部输出 `<h1 class="doc-title">标题</h1>` |
+| 正文 | 原样来自 `editor.getHtml()`，不包装、不改写、不追加页脚 |
+| 生成器 / 来源模式 / 导出时间 | 只写进 `<head>` 的 `<meta>`（`generator` / `source-mode` / `exported-at`），**不进正文** |
+
+**② 两种模式各自独立**
+
+正文 HTML 天然相同（模式切换本就保持内容不丢），差异体现在**文档外壳与版式**上：
+
+| | 默认模式 | 仿腾讯文档 |
+| --- | --- | --- |
+| 外层节点 | `<article class="doc doc--default">` | `<article class="doc doc--qqdoc">` |
+| `<body>` 标识 | `data-mode="default"` | `data-mode="qqdoc"` |
+| 背景 | 纯白 `#fff`，无卡片装饰 | 浅灰 `#f2f2f2` 画布 |
+| 内容区 | 居中限宽 860px，朴素阅读态 | 居中 **850px 白色纸张** + `0 2px 10px rgba(0,0,0,.12)` 阴影（与编辑器内纸张同尺寸） |
+| 标题字号 | 28px | 30px（对齐官方示例） |
+
+导出的文件保留 `data-mode`，便于再次导入 / 二次加工时识别来源模式。
+实现见 `js/features/exporter.js` 的 `MODE_SKINS`（`BASE_CSS` 为两模式共享的排版规则）。
+
+> 历史问题：早期版本会在正文写死一行 `wangEditor v5 · …模式 · 导出于 …` 水印，并把空标题填成「未命名文档」；
+> 同时 `buildDocument()` 只有一套外壳，`mode` 仅用于拼那句水印，导致两种模式导出的 HTML 除该句外完全一致。
+> 现已移除注入文案、按模式分派版式，并在自检中加入对应断言（见 [五](#五自动化自检)）。
+
 ---
 
 ## 五、自动化自检
@@ -174,11 +208,13 @@ switchMode(nextModeId)
 # 浏览器打开 http://127.0.0.1:8321/_selftest.html
 ```
 
-自检页在 `<iframe>` 中加载真实的 `index.html?demo=1`，跨模式断言 42 项，覆盖：
+自检页在 `<iframe>` 中加载真实的 `index.html?demo=1`，跨模式断言 56 项，覆盖：
 依赖与初始化、默认模式的 DOM 与 `scroll: true`、`setHtml/getHtml` 往返、统计口径、
-导出文档完整性、localStorage 增删查、切换到 qqdoc 后的纸张宽度 850px / 工具栏背景 `#FCFCFC` /
-按钮数 41 → 40（仅差 fullScreen）/ `scroll: false`、跨模式内容保持、实例隔离、剪贴板 API、
-运行期无未捕获错误。当前结果：**42 passed / 0 failed**。
+**导出内容一致性**（空标题不注入「未命名文档」、无水印行、正文与 `getHtml()` 逐字一致）与
+**模式独立性**（两模式导出互不相同、外壳 `doc--default` / `doc--qqdoc`、`data-mode`、
+白底 vs 灰底 + 850px 纸张各自正确）、localStorage 增删查、切换到 qqdoc 后的纸张宽度 850px /
+工具栏背景 `#FCFCFC` / 按钮数 41 → 40（仅差 fullScreen）/ `scroll: false`、跨模式内容保持、
+实例隔离、剪贴板 API、运行期无未捕获错误。当前结果：**56 passed / 0 failed**。
 
 ---
 

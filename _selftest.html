@@ -95,6 +95,46 @@
       check('HTML 源码格式化产生多行', pretty.split('\n').length > 2, pretty.split('\n').length + ' 行');
       check('字节数格式化可用', /B|KB|MB/.test(w.AppExporter.byteSize(docHtml)));
 
+      /* ---------- D2. 导出内容一致性 + 模式独立性 ---------- */
+      var E = w.AppExporter;
+      // 只看 </style> 之后的正文，避免把 CSS 里的 .doc-title 规则误判为节点
+      function bodyOf(s) { return s.slice(s.indexOf('</style>')); }
+
+      var emptyDefault = E.buildDocument({ title: '', html: '<p><br></p>', mode: 'default' });
+      var emptyQqdoc = E.buildDocument({ title: '', html: '<p><br></p>', mode: 'qqdoc' });
+
+      check('空标题导出：不出现「未命名文档」占位文案',
+        emptyDefault.indexOf('未命名文档') < 0);
+      check('空标题导出：不出现工具名 / 时间水印行',
+        emptyDefault.indexOf('导出于') < 0 && emptyDefault.indexOf('wangEditor v5 ·') < 0);
+      check('空标题导出：正文不输出标题节点',
+        bodyOf(emptyDefault).indexOf('doc-title') < 0);
+      check('空文档导出：正文即编辑器空文档 <p><br></p>',
+        bodyOf(emptyDefault).indexOf('<p><br></p>') >= 0);
+
+      var titled = E.buildDocument({ title: '我的文章', html: '<p>hi</p>', mode: 'qqdoc' });
+      check('有标题时才输出 <h1 class="doc-title">',
+        titled.indexOf('<h1 class="doc-title">我的文章</h1>') >= 0);
+
+      check('导出正文与编辑器 getHtml() 逐字一致',
+        bodyOf(E.buildDocument({ title: '', html: editor.getHtml(), mode: 'default' }))
+          .indexOf(editor.getHtml()) >= 0);
+
+      check('默认模式导出外壳为 doc--default',
+        emptyDefault.indexOf('class="doc doc--default"') >= 0);
+      check('仿腾讯文档导出外壳为 doc--qqdoc',
+        emptyQqdoc.indexOf('class="doc doc--qqdoc"') >= 0);
+      check('两种模式导出的 HTML 不相同（模式真正参与导出）',
+        emptyDefault !== emptyQqdoc);
+      check('默认模式导出 body[data-mode="default"]',
+        emptyDefault.indexOf('<body data-mode="default">') >= 0);
+      check('仿腾讯文档导出 body[data-mode="qqdoc"]',
+        emptyQqdoc.indexOf('<body data-mode="qqdoc">') >= 0);
+      check('默认模式导出为朴素白底（无灰画布）',
+        emptyDefault.indexOf('#f2f2f2') < 0);
+      check('仿腾讯文档导出为灰底 + 850px 白纸',
+        emptyQqdoc.indexOf('#f2f2f2') >= 0 && emptyQqdoc.indexOf('width:850px') >= 0);
+
       /* ---------- E. 本地存储 ---------- */
       var slot = w.AppStorage.saveSlot('自检存档', { html: html, title: '自检', mode: 'default' });
       check('localStorage：写入命名存档成功', !!slot, slot ? slot.name : 'null');
@@ -125,6 +165,10 @@
       var qqEditor = w.App.state.instance.editor;
       check('腾讯文档模式：editorConfig.scroll 为 false（页面级滚动）',
         qqEditor.getConfig().scroll === false, String(qqEditor.getConfig().scroll));
+      var qqExport = w.App.buildExport();
+      check('qqdoc 模式下 App.buildExport() 产出仿腾讯文档外壳（模式真正接线到导出）',
+        qqExport.indexOf('class="doc doc--qqdoc"') >= 0 &&
+        qqExport.indexOf('<body data-mode="qqdoc">') >= 0);
 
       /* ---------- G. 跨模式内容保持 ---------- */
       check('切换模式后内容不丢失',
