@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>自检 · wangEditor 双模式编辑器</title>
+  <style>
+    body { font: 13px/1.6 Consolas, Monaco, monospace; padding: 14px 18px; margin: 0; background: #fff; color: #111; }
+    h1 { font-size: 15px; margin: 0 0 8px; font-family: system-ui, sans-serif; }
+    #summary { font-weight: 700; margin: 4px 0 12px; font-size: 14px; }
+    #out { white-space: pre-wrap; }
+    #frame { width: 1400px; height: 900px; border: 1px solid #ccc; margin-top: 14px; }
+  </style>
+</head>
+<body>
+  <h1>wangEditor 双模式编辑器 · 自动化自检</h1>
+  <div id="summary">running…</div>
+  <pre id="out"></pre>
+  <iframe id="frame" src="./index.html?demo=1"></iframe>
+  <script>
+    var lines = [], passed = 0, failed = 0;
+
+    function check(name, condition, extra) {
+      var ok = !!condition;
+      ok ? passed++ : failed++;
+      lines.push((ok ? 'PASS  ' : 'FAIL  ') + name + (extra ? '   -> ' + extra : ''));
+    }
+
+    function finish() {
+      document.getElementById('out').textContent = lines.join('\n');
+      var s = document.getElementById('summary');
+      s.textContent = 'RESULT: ' + passed + ' passed / ' + failed + ' failed';
+      s.style.color = failed ? '#c0261a' : '#0a7a35';
+    }
+
+    function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+    function buttons(d) { return d.querySelectorAll('.w-e-bar-item').length; }
+
+    var frame = document.getElementById('frame');
+
+    frame.onload = function () {
+      var w = frame.contentWindow, d = frame.contentDocument;
+      (async function () {
+        try {
+          await wait(1200);                      // 等首屏渲染完成
+          await runChecks(w, d);
+        } catch (err) {
+          check('自检脚本执行未抛异常', false, err && err.message);
+        }
+        finish();
+      })();
+    };
+
+    async function runChecks(w, d) {
+      /* ---------- A. 依赖与初始化 ---------- */
+      check('wangEditor 全局对象已加载', !!(w.wangEditor && w.wangEditor.createEditor));
+      check('AppEditor 工厂就绪', !!(w.AppEditor && w.AppEditor.isReady()));
+      check('AppStorage / AppClipboard / AppExporter 均已注册',
+        !!(w.AppStorage && w.AppClipboard && w.AppExporter));
+      check('App 引导完成且进入默认模式',
+        !!(w.App && w.App.state && w.App.state.modeId === 'default'),
+        w.App && w.App.state ? w.App.state.modeId : 'n/a');
+      check('未渲染初始化错误提示', !d.querySelector('.stage-error'));
+
+      /* ---------- B. 默认模式渲染 ---------- */
+      check('默认模式：外壳 border 容器存在', !!d.querySelector('.default-shell'));
+      check('默认模式：工具栏渲染出按钮', buttons(d) > 20, buttons(d) + ' 个按钮');
+      check('默认模式：编辑区 slate 节点存在', !!d.querySelector('[data-slate-editor]'));
+      check('默认模式：包含「全屏」菜单', !!d.querySelector('[data-menu-key="fullScreen"]'));
+      check('默认模式：统计行存在（Text length）', !!d.querySelector('.default-stats'));
+      check('默认模式：body[data-mode] 正确', d.body.getAttribute('data-mode') === 'default');
+      check('示例内容已载入（?demo=1）',
+        d.querySelector('[data-slate-editor]').textContent.indexOf('wangEditor 双模式') >= 0);
+
+      var editor = w.App.state.instance.editor;
+      check('默认模式：editorConfig.scroll 为 true（内部滚动）',
+        editor.getConfig().scroll === true, String(editor.getConfig().scroll));
+      var defaultBtnCount = buttons(d);
+
+      /* ---------- C. 内容读写与统计 ---------- */
+      editor.setHtml('<p>hello <strong>world</strong></p><h2>标题</h2>');
+      var html = editor.getHtml();
+      check('setHtml -> getHtml 往返一致',
+        html.indexOf('<strong>world</strong>') >= 0 && html.indexOf('标题') >= 0);
+      var stats = w.App.state.instance.getStats();
+      check('统计：字数 > 0 且含选中字段',
+        stats.total > 5 && typeof stats.selected === 'number',
+        'total=' + stats.total + ', selected=' + stats.selected);
+
+      /* ---------- D. 导出与格式化 ---------- */
+      var docHtml = w.App.buildExport();
+      check('导出文档是完整 HTML', /^<!DOCTYPE html>/.test(docHtml) && /<\/html>\s*$/.test(docHtml));
+      check('导出文档内嵌阅读样式与正文',
+        docHtml.indexOf('--accent') >= 0 && docHtml.indexOf('<strong>world</strong>') >= 0);
+      var pretty = w.App.prettyHtml();
+      check('HTML 源码格式化产生多行', pretty.split('\n').length > 2, pretty.split('\n').length + ' 行');
+      check('字节数格式化可用', /B|KB|MB/.test(w.AppExporter.byteSize(docHtml)));
+
+      /* ---------- E. 本地存储 ---------- */
+      var slot = w.AppStorage.saveSlot('自检存档', { html: html, title: '自检', mode: 'default' });
+      check('localStorage：写入命名存档成功', !!slot, slot ? slot.name : 'null');
+      check('localStorage：存档可被列出',
+        w.AppStorage.listSlots().some(function (s) { return s.name === '自检存档'; }));
+      if (slot) w.AppStorage.removeSlot(slot.id);
+      check('localStorage：删除存档成功',
+        !w.AppStorage.listSlots().some(function (s) { return s.name === '自检存档'; }));
+
+      /* ---------- F. 切到「仿腾讯文档」模式 ---------- */
+      w.App.switchMode('qqdoc');
+      await wait(500);                                  // wangEditor 异步渲染工具栏，必须等待
+      check('切换后 body[data-mode] = qqdoc', d.body.getAttribute('data-mode') === 'qqdoc');
+      check('腾讯文档模式：纸张容器存在', !!d.querySelector('.qqdoc-page'));
+      check('腾讯文档模式：标题输入框存在', !!d.querySelector('#doc-title'));
+      check('腾讯文档模式：工具栏渲染出按钮', buttons(d) > 20, buttons(d) + ' 个按钮');
+      check('腾讯文档模式：工具栏已隐藏「全屏」',
+        !d.querySelector('[data-menu-key="fullScreen"]'),
+        '默认 ' + defaultBtnCount + ' 个 -> 腾讯文档 ' + buttons(d) + ' 个');
+      check('腾讯文档模式：工具栏与默认模式仅差「全屏」一项',
+        buttons(d) === defaultBtnCount - 1);
+      check('腾讯文档模式：纸张宽度 850px',
+        Math.round(d.querySelector('.qqdoc-page').getBoundingClientRect().width) === 850,
+        Math.round(d.querySelector('.qqdoc-page').getBoundingClientRect().width) + 'px');
+      check('腾讯文档模式：工具栏背景 #FCFCFC',
+        w.getComputedStyle(d.querySelector('#editor-toolbar')).backgroundColor === 'rgb(252, 252, 252)',
+        w.getComputedStyle(d.querySelector('#editor-toolbar')).backgroundColor);
+      var qqEditor = w.App.state.instance.editor;
+      check('腾讯文档模式：editorConfig.scroll 为 false（页面级滚动）',
+        qqEditor.getConfig().scroll === false, String(qqEditor.getConfig().scroll));
+
+      /* ---------- G. 跨模式内容保持 ---------- */
+      check('切换模式后内容不丢失',
+        qqEditor.getHtml().indexOf('<strong>world</strong>') >= 0,
+        qqEditor.getHtml().replace(/\n/g, ' ').slice(0, 50));
+      check('qqdoc 模式下可直接继续编辑（设置内容生效）',
+        (function () {
+          qqEditor.setHtml('<p>qqdoc 编辑结果</p>');
+          return qqEditor.getHtml().indexOf('qqdoc 编辑结果') >= 0;
+        })());
+
+      /* ---------- H. 切回默认模式 ---------- */
+      w.App.switchMode('default');
+      await wait(500);
+      check('切回默认模式成功', d.body.getAttribute('data-mode') === 'default');
+      check('二次切换后仍渲染出工具栏', buttons(d) === defaultBtnCount, buttons(d) + ' 个按钮');
+      check('二次切换后内容依然保持（来自 qqdoc 的编辑结果）',
+        w.App.state.instance.editor.getHtml().indexOf('qqdoc 编辑结果') >= 0);
+
+      /* ---------- I. 模式实例隔离 ---------- */
+      check('同一时刻只有一个编辑器实例',
+        d.querySelectorAll('[data-slate-editor]').length === 1,
+        d.querySelectorAll('[data-slate-editor]').length + ' 个');
+      check('舞台内不残留上一模式的 DOM',
+        !d.querySelector('.qqdoc-page') && d.querySelectorAll('.default-shell').length === 1);
+
+      /* ---------- J. 剪贴板与运行时错误 ---------- */
+      check('剪贴板 API 已注册（富文本 + 纯文本 + 回退）',
+        typeof w.AppClipboard.copyRich === 'function' &&
+        typeof w.AppClipboard.copyPlain === 'function' &&
+        typeof w.AppClipboard.legacyCopy === 'function');
+      check('剪贴板回退方案可执行',
+        typeof w.AppClipboard.legacyCopy('<b>x</b>', 'x') === 'boolean');
+      check('运行期无未捕获错误', w.App.errors.length === 0,
+        w.App.errors.length ? w.App.errors.join(' | ') : 'clean');
+      check('模式注册表齐全（default / qqdoc）', !!(w.AppModes.default && w.AppModes.qqdoc));
+    }
+  </script>
+</body>
+</html>
