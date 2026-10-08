@@ -5,6 +5,8 @@
      · 1px 边框容器包裹「工具栏 + 编辑区」，两者之间 1px 分隔线
      · 编辑区固定高度，超出部分由编辑器内部滚动（scroll: true）
      · 保留官方的内容统计行（Text length / Selected text length）
+
+   本模式与「仿腾讯文档模式」完全独立：各自持有自己的文档与草稿，切换不互相传递内容。
    ========================================================================== */
 (function (global) {
   'use strict';
@@ -31,7 +33,7 @@
     ].join('\n'),
 
     editorConfig: {
-      placeholder: '请输入内容…支持博客长文与 BBS 发帖 / 回复',
+      placeholder: '请输入内容…',
       scroll: true
     },
 

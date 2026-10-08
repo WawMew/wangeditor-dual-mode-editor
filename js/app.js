@@ -1,9 +1,11 @@
 /* ==========================================================================
    app.js — 应用引导与编排
-     · 模式切换机制：取出内容 → 销毁旧实例 → 换皮肤/模板 → 用同一份内容重建
+     · 模式切换机制：两种模式**完全独立** —— 各自持有自己的文档与自动草稿。
+       切换时先把当前模式的现场落回它自己的槽位，再用目标模式自己的内容重建实例，
+       模式之间不传递任何内容。
      · 顶栏动作：复制 / 复制 HTML / 预览 / 导出 HTML / 保存 / 导入 / 示例 / 清空 / 源码
      · 状态栏：当前模式、字数、选中字数、草稿状态
-     · 自动草稿：变更后节流写入 localStorage，关闭页面前再兜底一次
+     · 自动草稿：变更后节流写入 localStorage（**按模式分别存储**），关闭页面前再兜底一次
    ========================================================================== */
 (function (global) {
   'use strict';
@@ -15,11 +17,26 @@
   var Modes = global.AppModes || {};
   var DEFAULT_MODE = 'default';
   var DRAFT_DEBOUNCE = 800;
+  var EMPTY_HTML = '<p><br></p>';
+
+  // 每个模式一份独立文档：docs[modeId] = { html }
+  var docs = {};
+
+  function ensureDocs() {
+    Object.keys(Modes).forEach(function (id) {
+      if (!docs[id]) docs[id] = { html: EMPTY_HTML };
+    });
+  }
+
+  function currentDoc() {
+    var id = state.modeId || DEFAULT_MODE;
+    if (!docs[id]) docs[id] = { html: EMPTY_HTML };
+    return docs[id];
+  }
 
   var state = {
     modeId: null,
-    html: null,      // 跨模式流转的内容
-    title: '',       // 跨模式流转的文档标题
+    docs: docs,      // 各模式各自的文档（同一引用，便于调试 / 自检）
     instance: null   // { editor, toolbar, destroy(), getStats() ... }
   };
 
@@ -85,18 +102,12 @@
 
   function currentHtml() {
     var editor = liveEditor();
-    return editor ? editor.getHtml() : (state.html || '');
+    return editor ? editor.getHtml() : currentDoc().html;
   }
 
   function currentText() {
     var editor = liveEditor();
     return editor ? String(editor.getText() || '') : '';
-  }
-
-  function currentTitle() {
-    var input = doc.getElementById('doc-title');
-    if (input) return input.value.trim();
-    return (state.title || '').trim();
   }
 
   /** 取当前选区的 HTML 片段（无选区返回空串） */
@@ -147,11 +158,7 @@
 
   function saveDraftNow() {
     if (!Storage.available) { refreshDraftStatus('不可用'); return; }
-    var ok = Storage.saveDraft({
-      html: currentHtml(),
-      title: currentTitle(),
-      mode: state.modeId
-    });
+    var ok = Storage.saveDraft(state.modeId, { html: currentHtml() });
     refreshDraftStatus(ok ? '自动保存 ' + clock(Date.now()) : '超配额');
   }
 
@@ -187,6 +194,8 @@
 
   /**
    * 切换模式
+   * 两种模式完全独立：只把「当前模式」的现场写回它自己的文档槽，
+   * 再用「目标模式」自己的文档重建实例 —— 不存在跨模式的内容交接。
    * @param {string} modeId  目标模式 id
    * @param {object} options { force, silent }
    */
@@ -198,10 +207,9 @@
     var sameMode = state.instance && state.modeId === modeId;
     if (sameMode && !options.force) return;
 
-    // ---- 1) 取出当前内容（模式间的唯一交接物）----
-    if (state.instance) {
-      state.html = currentHtml();
-      state.title = currentTitle() || state.title;
+    // ---- 1) 把当前模式的现场落回它自己的文档槽（仅真正换模式时）----
+    if (state.instance && state.modeId !== modeId) {
+      currentDoc().html = currentHtml();
     }
 
     // ---- 2) 销毁旧实例（editor.destroy() 会连带销毁 toolbar）----
@@ -216,10 +224,10 @@
     doc.documentElement.setAttribute('data-app-mode', modeId);
     updateModeButtons();
 
-    // ---- 4) 用同一份内容重建新实例 ----
+    // ---- 4) 用「目标模式自己的文档」重建新实例 ----
     try {
       state.instance = global.AppEditor.create(mode, {
-        html: state.html || '<p><br></p>',
+        html: currentDoc().html || EMPTY_HTML,
         onChange: function () {
           refreshStats();
           refreshSourceSoon();
@@ -232,14 +240,7 @@
       return;
     }
 
-    // ---- 5) 回填文档标题（仅有标题栏的模式才有该节点）----
-    var titleInput = doc.getElementById('doc-title');
-    if (titleInput) {
-      titleInput.value = state.title || '';
-      titleInput.addEventListener('input', scheduleDraft);
-    }
-
-    // ---- 6) 同步地址栏，支持 #qqdoc 直接进入某个模式 ----
+    // ---- 5) 同步地址栏，支持 #qqdoc 直接进入某个模式 ----
     if (!options.silent) {
       var hash = '#' + modeId;
       if (global.location.hash !== hash) {
@@ -250,6 +251,9 @@
         }
       }
     }
+
+    // ---- 6) 记下当前模式，下次打开回到同一模式 ----
+    Storage.saveLastMode(modeId);
 
     // ---- 7) 界面状态 ----
     setStatus('mode', mode.label);
@@ -296,10 +300,9 @@
 
   /* ======================= 动作实现 ======================= */
 
-  /** 导出载荷：标题可为空（空则不输出标题节点），正文原样来自编辑器 */
+  /** 导出载荷：正文原样来自编辑器，模式决定文档外壳（两个模式导出各自独立） */
   function documentPayload() {
     return {
-      title: currentTitle(),
       html: currentHtml(),
       mode: state.modeId
     };
@@ -369,13 +372,8 @@
 
   /* ---- 导出 HTML 文件 ---- */
   function actionExport() {
-    var payload = documentPayload();
-    var html = Exporter.buildDocument(payload);
-
-    // 文件名：有标题用「标题-时间」，无标题用「文档-时间」，不注入「未命名文档」
-    var stamp = Exporter.timestamp();
-    var base = payload.title ? (payload.title + '-' + stamp) : ('文档-' + stamp);
-    var filename = Exporter.safeFilename(base, '.html', '文档-' + stamp);
+    var html = Exporter.buildDocument(documentPayload());
+    var filename = Exporter.safeFilename('文档-' + Exporter.timestamp(), '.html', '文档');
 
     Exporter.download(filename, html, 'text/html');
     toast('已导出：' + filename);
@@ -442,16 +440,14 @@
   }
 
   function openSlot(slot) {
-    if (!Modes[slot.mode]) slot.mode = DEFAULT_MODE;
-    state.html = slot.html || '<p><br></p>';
-    state.title = slot.title || '';
+    var modeId = Modes[slot.mode] ? slot.mode : DEFAULT_MODE;
+
+    // 写进「该模式自己的」文档槽，再切过去 —— 模式之间不共享内容
+    if (!docs[modeId]) docs[modeId] = { html: EMPTY_HTML };
+    docs[modeId].html = slot.html || EMPTY_HTML;
 
     closeModal();
-    // 内容来源换了模式，强制重建
-    switchMode(slot.mode, { force: true });
-
-    var titleInput = doc.getElementById('doc-title');
-    if (titleInput) titleInput.value = slot.title || '';
+    switchMode(modeId, { force: true });
     toast('已打开存档：' + slot.name);
     setHint('已打开存档：' + slot.name);
   }
@@ -470,8 +466,8 @@
     var input = doc.createElement('input');
     input.type = 'text';
     input.className = 'save-input';
-    input.placeholder = '存档名称，例如：博客-第一篇';
-    input.value = currentTitle() || ('文档-' + Exporter.timestamp());
+    input.placeholder = '存档名称，例如：文档-01';
+    input.value = '文档-' + Exporter.timestamp();
     row.appendChild(input);
 
     var listHost = doc.createElement('div');
@@ -479,7 +475,6 @@
     row.appendChild(makeButton('保存当前文档', 'btn btn-primary', function () {
       var item = Storage.saveSlot(input.value, {
         html: currentHtml(),
-        title: currentTitle(),
         mode: state.modeId
       });
       if (!item) {
@@ -508,15 +503,13 @@
     if (looksLikeDocument) {
       try {
         var parsed = new global.DOMParser().parseFromString(trimmed, 'text/html');
-        var titleNode = parsed.querySelector('.doc-title');
-        var title = (titleNode && titleNode.textContent) || parsed.title || '';
-        return {
-          html: parsed.body ? parsed.body.innerHTML : trimmed,
-          title: String(title).trim()
-        };
+        // 本项目导出的文件外层是 <article class="doc …">：取其内部内容，
+        // 避免把文档外壳（模式皮肤）一起塞进编辑器
+        var host = parsed.querySelector('article.doc') || parsed.body;
+        return { html: host ? host.innerHTML : trimmed };
       } catch (e) { /* 落到下面的兜底分支 */ }
     }
-    return { html: trimmed, title: '' };
+    return { html: trimmed };
   }
 
   function applyImport(result, sourceLabel) {
@@ -524,14 +517,8 @@
     var editor = liveEditor();
     if (!editor) { toast('编辑器尚未就绪', true); return; }
 
-    state.html = result.html;
+    currentDoc().html = result.html;
     editor.setHtml(result.html);
-
-    if (result.title) {
-      state.title = result.title;
-      var titleInput = doc.getElementById('doc-title');
-      if (titleInput) titleInput.value = result.title;
-    }
 
     refreshStats();
     refreshSource();
@@ -583,12 +570,10 @@
   function actionSample() {
     var editor = liveEditor();
     if (!editor) return;
-    state.html = global.AppSample.html;
-    state.title = global.AppSample.title;
-    editor.setHtml(global.AppSample.html);
+    var html = global.AppSample.html;
 
-    var titleInput = doc.getElementById('doc-title');
-    if (titleInput) titleInput.value = global.AppSample.title;
+    currentDoc().html = html;
+    editor.setHtml(html);
 
     refreshStats();
     refreshSource();
@@ -600,14 +585,10 @@
   function actionClear() {
     var editor = liveEditor();
     if (!editor) return;
-    if (!global.confirm('确定清空当前编辑内容？此操作不可撤销（可先用「导出 HTML」备份）。')) return;
+    if (!global.confirm('确定清空当前模式的编辑内容？此操作不可撤销（可先用「导出 HTML」备份）。')) return;
 
-    state.html = '<p><br></p>';
-    state.title = '';
-    editor.setHtml('<p><br></p>');
-
-    var titleInput = doc.getElementById('doc-title');
-    if (titleInput) titleInput.value = '';
+    currentDoc().html = EMPTY_HTML;
+    editor.setHtml(EMPTY_HTML);
 
     refreshStats();
     refreshSource();
@@ -708,8 +689,9 @@
     var byHash = global.location.hash.replace(/^#/, '');
     if (Modes[byHash]) return byHash;
 
-    var draft = Storage.loadDraft();
-    if (draft && Modes[draft.mode]) return draft.mode;
+    // 上次所处的模式（草稿已按模式分开存储，模式本身单独记忆）
+    var last = Storage.loadLastMode();
+    if (last && Modes[last]) return last;
 
     return DEFAULT_MODE;
   }
@@ -734,32 +716,42 @@
     }
 
     var demo = wantDemoContent();
-    var draft = (!demo && Storage.available) ? Storage.loadDraft() : null;
+    var initial = resolveInitialMode();
 
-    if (demo && global.AppSample) {
-      state.html = global.AppSample.html;
-      state.title = global.AppSample.title;
-    } else {
-      state.html = (draft && draft.html) ? draft.html : '<p><br></p>';
-      state.title = (draft && draft.title) ? draft.title : '';
-    }
+    ensureDocs();
 
-    switchMode(resolveInitialMode(), { force: true, silent: !demo });
+    // 每个模式各自载入自己的草稿；?demo=1 时统一载入示例内容
+    Object.keys(Modes).forEach(function (id) {
+      if (demo) {
+        docs[id].html = global.AppSample ? global.AppSample.html : EMPTY_HTML;
+        return;
+      }
+      var own = Storage.available ? Storage.loadDraft(id) : null;
+      docs[id].html = (own && own.html) ? own.html : EMPTY_HTML;
+    });
+
+    switchMode(initial, { force: true, silent: !demo });
+
+    var restored = demo ? null : Storage.loadDraft(initial);
 
     if (demo) {
       refreshDraftStatus('示例内容');
       setHint('已载入示例内容（?demo=1）');
     } else {
-      refreshDraftStatus(draft ? '已恢复草稿 ' + clock(draft.updatedAt || Date.now()) : '未保存');
-      if (draft && draft.html && draft.html !== '<p><br></p>') {
-        toast('已恢复上次自动草稿（' + clock(draft.updatedAt || Date.now()) + '）');
+      refreshDraftStatus(restored
+        ? '已恢复草稿 ' + clock(restored.updatedAt || Date.now())
+        : '未保存');
+      if (restored && restored.html && restored.html !== EMPTY_HTML) {
+        toast('已恢复「' + (Modes[initial] ? Modes[initial].label : initial) +
+          '」的草稿（' + clock(restored.updatedAt || Date.now()) + '）');
       }
     }
   }
 
-  // 暴露给控制台调试：window.App.switchMode('qqdoc') / window.App.state
+  // 暴露给控制台调试：window.App.switchMode('qqdoc') / window.App.state / window.App.docs
   global.App = {
     state: state,
+    docs: docs,
     errors: runtimeErrors,
     switchMode: switchMode,
     save: actionSave,

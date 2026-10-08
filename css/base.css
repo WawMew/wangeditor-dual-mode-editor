@@ -77,7 +77,6 @@ body {
 
 .brand-text { display: flex; flex-direction: column; line-height: 1.35; }
 .brand-text strong { font-size: 14px; font-weight: 600; }
-.brand-text em { font-style: normal; font-size: 11px; color: var(--text-3); }
 
 /* 模式切换（分段控件） */
 .mode-switch {

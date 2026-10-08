@@ -3,9 +3,11 @@
    对齐官方示例 https://www.wangeditor.com/demo/like-qq-doc.html
      · 工具栏贴顶、整行居中（1350px / #FCFCFC），排除「全屏」菜单
      · 浅灰画布 + 居中 850px 白色纸张（描边 + 阴影）
-     · 纸张顶部 30px 大标题输入框
+     · 纸张内**没有独立标题栏**，开头即正文
      · editorConfig.scroll = false —— 编辑器自身不滚动，滚动交给外层画布
      · 点击纸张空白处聚焦编辑器末尾（官方示例行为）
+
+   本模式与「默认模式」完全独立：各自持有自己的文档与草稿，切换不互相传递内容。
    ========================================================================== */
 (function (global) {
   'use strict';
@@ -25,9 +27,6 @@
       '  </div>',
       '  <div class="qqdoc-canvas">',
       '    <div class="qqdoc-page">',
-      '      <div class="qqdoc-title">',
-      '        <input id="doc-title" type="text" placeholder="输入文档标题…" autocomplete="off" data-role="title" />',
-      '      </div>',
       '      <div id="editor-text-area" class="qqdoc-textarea" data-role="textarea"></div>',
       '    </div>',
       '  </div>',
