@@ -1,0 +1,32 @@
+# ---- 依赖与构建产物 ----
+node_modules/
+dist/
+build/
+*.tgz
+
+# ---- 编辑器 / IDE ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- 操作系统 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 日志与临时文件 ----
+*.log
+npm-debug.log*
+yarn-error.log*
+.hd-*/
+.cprof*/
+.cprofile/
+.chrome-test/
+diag/
+
+# ---- 本地环境覆盖（保留样例）----
+.env
+.env.local
+!.env.example

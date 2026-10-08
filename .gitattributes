@@ -1,0 +1,26 @@
+# 统一换行符：仓库内统一 LF，检出时按平台自动转换
+* text=auto eol=lf
+
+# 明确声明文本类型
+*.html  text eol=lf
+*.css   text eol=lf
+*.js    text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+
+# Windows 批处理必须保持 CRLF
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+
+# 二进制文件不做换行转换
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+
+# 第三方 vendor 目录在 diff 中折叠
+vendor/** linguist-vendored
