@@ -80,7 +80,12 @@ wangeditor-app/
 │   │   ├── exporter.js         导出：按模式生成独立 HTML 文档、下载、HTML 源码格式化、字节数格式化
 │   │   └── storage.js          本地持久化：与模式一一对应的自动草稿 + 命名存档（localStorage）
 │   └── content/
+│       ├── templates.js        富文本模板：白名单 FORMAT_LISTS、sanitize 净化、coalesceRuns 片段预合并、
+│       │                       双轨拆解 parseDocumentTemplate、7 个内置种子 SEEDS、外部清单加载
 │       └── sample.js           示例内容（「示例」按钮 / `?demo=1`）
+│
+├── templates/                  外部系统模板目录（可选扩展通道；当前为空）
+│   └── manifest.json           手工清单：登记 .html 文件名即成为系统模板
 │
 ├── vendor/wangeditor/          本地依赖，离线可用
 │   ├── index.js                @wangeditor/editor@5.1.23 UMD 构建（暴露 window.wangEditor）
@@ -198,15 +203,23 @@ wangEditor 在 Slate 归一化时会对同一路径重复执行两次 `merge_nod
 | **导出 HTML** | 下载独立可打开的 `文档-年月日-时分.html`，版式随当前模式 | `AppExporter.buildDocument()` + `download()`；内容与当前模式见 [4.1](#41-导出规则内容一致--模式独立) |
 | **保存** | 打开「本地存档」模态框：命名保存当前文档、列出历史存档（打开 / 删除） | `AppStorage.saveSlot/listSlots/removeSlot`（localStorage，同名覆盖） |
 | **导入** | 粘贴 HTML 源码或选择本地 `.html` 文件；完整文档会自动剥掉 `<article class="doc">` 外壳只取正文 | `DOMParser` + `editor.setHtml()` |
+| **模板** | 打开「富文本模板」面板：真实渲染缩略图预览，一键套用 / 从当前文档另存 / 导入导出模板文件 / 重命名 / 删除 | `js/content/templates.js`（sanitize 净化 + 双轨拆解）；用户模板存 localStorage（上限 50） |
 | **示例** | 注入内置示例内容（写入当前模式自己的文档） | `js/content/sample.js` |
 | **清空** | 二次确认后清空**当前模式**的编辑内容（不影响另一模式） | — |
 | **源码** | 右侧抽屉展示格式化后的 HTML 源码，可刷新 / 复制 | `AppExporter.prettyHtml()` |
 
 其他：
 
+- **富文本模板（内容 + 版式双轨）**：内置 7 个模板 —— 专栏文章、技术文档、通知公告、
+  极简纯文本、**周刊周报**、**金句卡片**、**安全知识课堂**（前 4 + 后 3 全部内置于
+  `js/content/templates.js` 的 `SEEDS`，`file://` 双击打开也可用）。
+  「使用模板」= 净化后的正文进编辑器可继续编辑 + 版式层（`<style>`）记入当前文档，
+  预览与导出时套用。面板里可把当前文档另存为「我的模板」（localStorage，上限 50），
+  也可导出 / 导入模板 `.html` 文件分享。`templates/` 目录仍保留扩展通道：
+  丢入 `.html` 并登记到 `manifest.json`（或经 `/_list/templates` 端点自动列出）即成为系统模板。
 - **自动草稿**：内容变更后 800ms 节流写入 localStorage，**按模式分别存**
   （`draft:default` / `draft:qqdoc`）；`visibilitychange` 与 `beforeunload` 再兜底一次；
-  下次打开按「上次所处的模式」恢复该模式自己的草稿（状态栏显示「自动保存 HH:MM」/「已恢复草稿 HH:MM」）。
+  刷新后的恢复行为见 [3.3](#33-草稿恢复与崩溃防护)。
 - **状态栏**：当前模式、字数、选中字数、草稿状态、操作提示。
 - **快捷键**：`Ctrl/Cmd + S` 打开存档、`Esc` 关闭模态框。
 - **全屏编辑（默认模式）**：点击工具栏「全屏」按钮后，编辑器容器铺满视口，

@@ -538,7 +538,135 @@
     skin: null
   };
 
-  var SEEDS = [T_COLUMN, T_TECH, T_NOTICE, T_PLAIN];
+  var T_WEEKLY = {
+    id: 'seed-weekly',
+    name: '周刊周报',
+    note: '本期导览 + 分板块要点，绿色强调、卡片式分栏',
+    accent: '#1d9e75',
+    content: [
+      '<h1><span style="font-size: 32px;">本期周刊 · 第 01 期</span></h1>',
+      '<p><span style="font-size: 13px; color: #8f959e;">2026-10-09 · 周刊编辑部</span></p>',
+      '<hr>',
+      '<h2><span style="font-size: 18px;">本期导览</span></h2>',
+      '<p style="line-height: 1.75;"><span style="font-size: 15px;">本期收录三条值得关注的信息，涵盖产品动态、行业观察与工具推荐，预计阅读时间五分钟。</span></p>',
+      '<h2><span style="font-size: 18px;">一、本周要闻</span></h2>',
+      '<p style="line-height: 1.75;"><span style="font-size: 15px;">这里写本周最值得知道的一件事。先说结论，再补两句背景，最后给出你的判断。</span></p>',
+      '<blockquote><span style="font-size: 14px; color: #0f6e56;">一句话点评：这条信息的价值不在于它是什么，而在于它意味着什么。</span></blockquote>',
+      '<h2><span style="font-size: 18px;">二、要点速览</span></h2>',
+      '<ul>',
+      '<li><span style="font-size: 15px;">要点一：一句话说清楚。</span></li>',
+      '<li><span style="font-size: 15px;">要点二：一句话说清楚。</span></li>',
+      '<li><span style="font-size: 15px;">要点三：一句话说清楚。</span></li>',
+      '</ul>',
+      '<h2><span style="font-size: 18px;">三、数据一览</span></h2>',
+      '<table><tbody>',
+      '<tr><th><span style="font-size: 14px;">指标</span></th><th><span style="font-size: 14px;">本周</span></th><th><span style="font-size: 14px;">环比</span></th></tr>',
+      '<tr><td><span style="font-size: 13px;">活跃用户</span></td><td><span style="font-size: 13px;">0</span></td><td><span style="font-size: 13px;">—</span></td></tr>',
+      '<tr><td><span style="font-size: 13px;">新增内容</span></td><td><span style="font-size: 13px;">0</span></td><td><span style="font-size: 13px;">—</span></td></tr>',
+      '</tbody></table>',
+      '<p style="line-height: 1.75;"><span style="font-size: 15px;">—— 本周刊由编辑部整理，欢迎回复补充线索。</span></p>'
+    ].join('\n'),
+    skin: {
+      wrapperClass: 'doc doc--tpl-weekly',
+      css: SKIN_COMMON + [
+        'body{background:#eef2ee}',
+        '.doc--tpl-weekly{width:800px;max-width:100%;margin:32px auto 64px;background:#fff;',
+        '  padding:40px 56px 56px;border-radius:6px;box-shadow:0 2px 14px rgba(20,60,40,.10)}',
+        '.doc--tpl-weekly h1{font-size:30px;line-height:1.35;margin:0 0 6px;color:#0f6e56}',
+        '.doc--tpl-weekly h2{font-size:19px;margin:30px 0 10px;color:#0f6e56}',
+        '.doc--tpl-weekly h2:before{content:"";display:inline-block;width:8px;height:8px;background:#1d9e75;',
+        '  border-radius:2px;margin-right:10px;vertical-align:2px}',
+        '.doc--tpl-weekly p{font-size:15px;line-height:1.85;margin:12px 0;color:#2c2c2a}',
+        '.doc--tpl-weekly blockquote{margin:18px 0;padding:14px 18px;background:#e8f5f0;',
+        '  border-left:4px solid #1d9e75;color:#0f6e56;border-radius:0 4px 4px 0}',
+        '.doc--tpl-weekly hr{border:0;border-top:1px solid #dfe7e2;margin:0 0 4px}',
+        '.doc--tpl-weekly ul{margin:12px 0;padding-left:22px}',
+        '.doc--tpl-weekly li{margin:8px 0;font-size:15px;line-height:1.8}',
+        '.doc--tpl-weekly table{width:100%;margin:16px 0;border-collapse:collapse;font-size:14px}',
+        '.doc--tpl-weekly th,.doc--tpl-weekly td{border:1px solid #dfe7e2;padding:8px 10px;text-align:left}',
+        '.doc--tpl-weekly th{background:#f2f8f5;color:#0f6e56}',
+        '@media(max-width:860px){.doc--tpl-weekly{width:100%;margin:0;padding:28px 20px 44px;border-radius:0}}'
+      ].join('\n')
+    }
+  };
+
+  var T_QUOTE = {
+    id: 'seed-quote',
+    name: '金句卡片',
+    note: '深色底 + 大号居中引言 + 出处落款；块级背景由版式层承担',
+    accent: '#d4a94a',
+    content: [
+      '<p><span style="font-size: 13px; color: #d4a94a;">每日一句</span></p>',
+      '<h1 style="text-align: center;"><span style="font-size: 24px;">把复杂的事情做简单，<br />把简单的事情做彻底。</span></h1>',
+      '<hr>',
+      '<blockquote><span style="font-size: 15px; color: #a9a49a;">—— 出处 / 作者</span></blockquote>',
+      '<p style="text-align: center;"><span style="font-size: 13px; color: #6f6b63;">#思考 #方法论</span></p>'
+    ].join('\n'),
+    skin: {
+      wrapperClass: 'doc doc--tpl-quote',
+      css: SKIN_COMMON + [
+        'body{background:#15161a}',
+        '.doc--tpl-quote{width:680px;max-width:100%;margin:48px auto 72px;padding:64px 56px 56px;',
+        '  border-left:3px solid #d4a94a;background:#1c1e24;border-radius:2px}',
+        '.doc--tpl-quote h1{font-size:24px;line-height:1.7;margin:0 0 32px;text-align:center;',
+        '  color:#f2efe8;font-weight:400;letter-spacing:1px}',
+        '.doc--tpl-quote p{font-size:15px;line-height:1.9;margin:18px 0;color:#a9a49a;text-align:center}',
+        '.doc--tpl-quote p:first-of-type{font-size:13px;color:#d4a94a;letter-spacing:3px;text-transform:uppercase}',
+        '.doc--tpl-quote hr{border:0;border-top:1px solid #34373f;margin:36px auto;width:64px}',
+        '.doc--tpl-quote blockquote{margin:28px 0 0;padding:0;background:none;border:0;text-align:center}',
+        '@media(max-width:740px){.doc--tpl-quote{width:100%;margin:0;padding:48px 24px 40px;',
+        '  border-left:0;border-top:3px solid #d4a94a;border-radius:0}}'
+      ].join('\n')
+    }
+  };
+
+  var T_SAFETY = {
+    id: 'seed-safety',
+    name: '安全知识课堂',
+    note: '橙红警示配色，导语 + 知识点卡片 + 提示框 + 互动问答，面向单位安全教育',
+    accent: '#e65f2b',
+    content: [
+      '<h1 style="text-align: center;"><span style="font-size: 32px;">安全知识课堂 · 第 01 课</span></h1>',
+      '<p style="text-align: center;"><span style="font-size: 13px; color: #9a6a54;">安全生产 · 人人有责 · 2026-10-09</span></p>',
+      '<hr>',
+      '<p style="text-indent: 2em; line-height: 1.9;"><span style="font-size: 16px;">这里是本期课堂的导语。用一两句话点明今天要讲的安全主题，以及为什么它和你息息相关。</span></p>',
+      '<h2><span style="font-size: 22px;">一、今日知识点</span></h2>',
+      '<p style="line-height: 1.9;"><span style="font-size: 16px;">把核心知识点写在这里，尽量用一句能记住的话讲清楚。</span></p>',
+      '<blockquote><span style="font-size: 15px; color: #b54a1a;">⚠ 重点提醒：遇到突发情况，先确保自身安全，再按应急预案处置。</span></blockquote>',
+      '<h2><span style="font-size: 22px;">二、操作要领</span></h2>',
+      '<ol>',
+      '<li><span style="font-size: 16px;">第一步：写清规范操作的动作。</span></li>',
+      '<li><span style="font-size: 16px;">第二步：写清需要规避的危险动作。</span></li>',
+      '<li><span style="font-size: 16px;">第三步：写清处置完成后的检查确认。</span></li>',
+      '</ol>',
+      '<h2><span style="font-size: 22px;">三、互动问答</span></h2>',
+      '<p style="line-height: 1.9;"><span style="font-size: 16px;">问：这里放一个常见的判断题或选择题。</span></p>',
+      '<p style="line-height: 1.9;"><span style="font-size: 16px;">答：这里给出正确答案，并补一句解释。</span></p>',
+      '<hr>',
+      '<p style="text-align: center;"><span style="font-size: 12px; color: #9a6a54;">安全无小事，防患于未然 —— 下期见。</span></p>'
+    ].join('\n'),
+    skin: {
+      wrapperClass: 'doc doc--tpl-safety',
+      css: SKIN_COMMON + [
+        'body{background:#fdf6f2}',
+        '.doc--tpl-safety{width:800px;max-width:100%;margin:32px auto 64px;background:#fffefc;',
+        '  padding:44px 56px 60px;border-top:4px solid #e65f2b;border-radius:0 0 6px 6px;',
+        '  box-shadow:0 2px 12px rgba(160,80,40,.10)}',
+        '.doc--tpl-safety h1{font-size:32px;line-height:1.35;margin:0 0 8px;color:#c8431a}',
+        '.doc--tpl-safety h2{font-size:20px;margin:30px 0 12px;padding:8px 14px;background:#fdeee7;',
+        '  color:#c8431a;border-radius:4px}',
+        '.doc--tpl-safety p{font-size:16px;line-height:1.9;margin:14px 0;color:#3a2e2a}',
+        '.doc--tpl-safety blockquote{margin:18px 0;padding:14px 18px;background:#fff3ea;',
+        '  border-left:4px solid #e65f2b;color:#b54a1a;border-radius:0 4px 4px 0}',
+        '.doc--tpl-safety ol{margin:12px 0;padding-left:24px}',
+        '.doc--tpl-safety li{margin:10px 0;font-size:16px;line-height:1.8}',
+        '.doc--tpl-safety hr{border:0;border-top:1px solid #f0d9cd;margin:28px 0}',
+        '@media(max-width:860px){.doc--tpl-safety{width:100%;margin:0;padding:28px 20px 44px;border-radius:0}}'
+      ].join('\n')
+    }
+  };
+
+  var SEEDS = [T_COLUMN, T_TECH, T_NOTICE, T_PLAIN, T_WEEKLY, T_QUOTE, T_SAFETY];
 
   /* ====================== 6. 外部模板清单 ======================
      两条通道，按顺序尝试：
