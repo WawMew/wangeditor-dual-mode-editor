@@ -9,6 +9,10 @@
 #   PowerShell is part of Windows itself, so this server always runs.
 #
 #   Usage:  powershell -ExecutionPolicy Bypass -File tools\serve.ps1 -Port 8321
+#
+#   Extra endpoints:
+#     GET /_list/templates   -> 纯文本，一行一个 templates/*.html 文件名。
+#                               应用用它自动发现系统模板，无需手工清单。
 # ==========================================================================
 param(
   [int]$Port = 8321,
@@ -88,31 +92,48 @@ while ($listener.IsListening) {
   try {
     $rel = [System.Uri]::UnescapeDataString($path).TrimStart('/')
     if ([string]::IsNullOrEmpty($rel)) { $rel = 'index.html' }
-    $full = [System.IO.Path]::GetFullPath((Join-Path $Root ($rel -replace '/', '\')))
 
-    if (-not $full.StartsWith($Root, [System.StringComparison]::OrdinalIgnoreCase)) {
-      $status = 403
-      $bytes = [System.Text.Encoding]::UTF8.GetBytes("403 Forbidden")
-      $ctype = "text/plain; charset=utf-8"
-    } elseif (Test-Path -LiteralPath $full -PathType Container) {
-      $idx = Join-Path $full 'index.html'
-      if (Test-Path -LiteralPath $idx -PathType Leaf) { $full = $idx } else { $full = $null }
-      if (-not $full) {
-        $status = 404
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes("404 Not Found: $path")
-        $ctype = "text/plain; charset=utf-8"
+    # 模板清单端点：一行一个文件名（纯文本，避免 JSON 单元素数组被折叠的坑）。
+    # 有了它，「把导出的模板 .html 丢进 templates/」就会被应用自动发现，
+    # 不需要再手工维护任何清单文件。
+    if ($rel -eq '_list/templates') {
+      $tplDir = Join-Path $Root 'templates'
+      $names = @()
+      if (Test-Path -LiteralPath $tplDir -PathType Container) {
+        $names = @(Get-ChildItem -LiteralPath $tplDir -File -Filter '*.html' |
+          Sort-Object Name | ForEach-Object { $_.Name })
       }
-    }
+      $text = ($names -join "`n")
+      if ($text.Length -gt 0) { $text = $text + "`n" }
+      $bytes = [System.Text.Encoding]::UTF8.GetBytes($text)
+      $ctype = "text/plain; charset=utf-8"
+    } else {
+      $full = [System.IO.Path]::GetFullPath((Join-Path $Root ($rel -replace '/', '\')))
 
-    if ($status -eq 200) {
-      if (Test-Path -LiteralPath $full -PathType Leaf) {
-        $bytes = [System.IO.File]::ReadAllBytes($full)
-        $ext = [System.IO.Path]::GetExtension($full).ToLowerInvariant()
-        if ($mime.ContainsKey($ext)) { $ctype = $mime[$ext] }
-      } else {
-        $status = 404
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes("404 Not Found: $path")
+      if (-not $full.StartsWith($Root, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $status = 403
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes("403 Forbidden")
         $ctype = "text/plain; charset=utf-8"
+      } elseif (Test-Path -LiteralPath $full -PathType Container) {
+        $idx = Join-Path $full 'index.html'
+        if (Test-Path -LiteralPath $idx -PathType Leaf) { $full = $idx } else { $full = $null }
+        if (-not $full) {
+          $status = 404
+          $bytes = [System.Text.Encoding]::UTF8.GetBytes("404 Not Found: $path")
+          $ctype = "text/plain; charset=utf-8"
+        }
+      }
+
+      if ($status -eq 200) {
+        if (Test-Path -LiteralPath $full -PathType Leaf) {
+          $bytes = [System.IO.File]::ReadAllBytes($full)
+          $ext = [System.IO.Path]::GetExtension($full).ToLowerInvariant()
+          if ($mime.ContainsKey($ext)) { $ctype = $mime[$ext] }
+        } else {
+          $status = 404
+          $bytes = [System.Text.Encoding]::UTF8.GetBytes("404 Not Found: $path")
+          $ctype = "text/plain; charset=utf-8"
+        }
       }
     }
   } catch {

@@ -14,25 +14,33 @@
   var Storage = global.AppStorage;
   var Clipboard = global.AppClipboard;
   var Exporter = global.AppExporter;
+  var Templates = global.AppTemplates;
   var Modes = global.AppModes || {};
   var DEFAULT_MODE = 'default';
   var DRAFT_DEBOUNCE = 800;
   var EMPTY_HTML = '<p><br></p>';
+  var MAX_THUMBS = 24;
 
-  // 每个模式一份独立文档：docs[modeId] = { html }
+  // 每个模式一份独立文档：docs[modeId] = { html, templateId }
+  // templateId 记住该文档套用的模板（版式层），为空表示不套版式。
   var docs = {};
+
+  function blankDoc() { return { html: EMPTY_HTML, templateId: '' }; }
 
   function ensureDocs() {
     Object.keys(Modes).forEach(function (id) {
-      if (!docs[id]) docs[id] = { html: EMPTY_HTML };
+      if (!docs[id]) docs[id] = blankDoc();
     });
   }
 
   function currentDoc() {
     var id = state.modeId || DEFAULT_MODE;
-    if (!docs[id]) docs[id] = { html: EMPTY_HTML };
+    if (!docs[id]) docs[id] = blankDoc();
     return docs[id];
   }
+
+  // templates/ 目录下的外部系统模板（运行期异步加载）
+  var externalTemplates = [];
 
   var state = {
     modeId: null,
@@ -158,7 +166,10 @@
 
   function saveDraftNow() {
     if (!Storage.available) { refreshDraftStatus('不可用'); return; }
-    var ok = Storage.saveDraft(state.modeId, { html: currentHtml() });
+    var ok = Storage.saveDraft(state.modeId, {
+      html: currentHtml(),
+      templateId: currentDoc().templateId || ''
+    });
     refreshDraftStatus(ok ? '自动保存 ' + clock(Date.now()) : '超配额');
   }
 
@@ -190,6 +201,112 @@
       '已被完整下载（可直接双击 index.html，或通过本地 HTTP 服务打开）。';
     box.querySelector('span').textContent = message;
     stage.appendChild(box);
+  }
+
+  /* ======================= 内容安全通道 =======================
+
+     所有「HTML → 编辑器」的入口都必须走 setEditorHtmlSafe：
+     1) 先经 Templates.coalesceRuns() 预合并相邻同格式文本片段
+        （wangEditor 5.1.23 对 ≥3 个相邻片段会在 Slate 归一化时崩溃）；
+     2) setHtml 再包一层 try/catch —— 万一仍崩溃，编辑器保住、
+        原文存进 failed-restore 备份键，弹窗提供「导出备份 / 从空白开始」。 */
+
+  function resetEditorBlank() {
+    try {
+      state.instance.setHtml(EMPTY_HTML);
+      return true;
+    } catch (e) { /* 继续走重建 */ }
+
+    try { state.instance.destroy(); } catch (e) { /* noop */ }
+    var mode = Modes[state.modeId];
+    if (!mode) return false;
+    try {
+      state.instance = global.AppEditor.create(mode, {
+        html: EMPTY_HTML,
+        onChange: function () {
+          refreshStats();
+          refreshSourceSoon();
+          scheduleDraft();
+        },
+        onSelectionChange: refreshStats
+      });
+      return true;
+    } catch (e) {
+      renderStageError(e);
+      return false;
+    }
+  }
+
+  /**
+   * 把 HTML 安全地灌入当前编辑器（草稿恢复 / 导入 / 模板共用）。
+   * @returns {boolean} 是否成功
+   */
+  function setEditorHtmlSafe(html) {
+    var editor = liveEditor();
+    if (!editor) return false;
+    var safe = Templates.coalesceRuns(html);
+
+    try {
+      editor.setHtml(safe);
+      currentDoc().html = safe;
+      return true;
+    } catch (err) {
+      // 原文备份：不清 localStorage，留给用户导出找回
+      Storage.saveFailedRestore(state.modeId, html);
+      runtimeErrors.push({
+        at: 'setEditorHtmlSafe',
+        message: err && err.message ? String(err.message).slice(0, 300) : String(err),
+        time: Date.now()
+      });
+      resetEditorBlank();
+      currentDoc().html = EMPTY_HTML;
+      openFailedRestoreModal(err);
+      return false;
+    }
+  }
+
+  /** 恢复失败兜底弹窗：导出备份 or 放弃 */
+  function openFailedRestoreModal(err) {
+    var wrap = doc.createElement('div');
+
+    var hint = doc.createElement('p');
+    hint.className = 'import-hint';
+    hint.textContent = '内容恢复失败（编辑器格式引擎崩溃，多为网页粘贴产生的特殊片段结构）。' +
+      '原文已留存，可导出 .html 备份后用「导入」分段找回；或从空白重新开始。';
+    wrap.appendChild(hint);
+
+    if (err && err.message) {
+      var detail = doc.createElement('p');
+      detail.className = 'tpl-error-detail';
+      detail.textContent = '技术细节：' + String(err.message).slice(0, 160);
+      wrap.appendChild(detail);
+    }
+
+    var row = doc.createElement('div');
+    row.className = 'save-row';
+    row.appendChild(makeButton('导出草稿备份', 'btn btn-primary', function () {
+      var backup = Storage.getFailedRestore(state.modeId);
+      var html = (backup && backup.html) || '';
+      Exporter.download(
+        Exporter.safeFilename('草稿备份-' + Exporter.timestamp(), '.html', '草稿备份'),
+        Exporter.buildDocument({ html: html, mode: state.modeId }),
+        'text/html'
+      );
+      Storage.clearFailedRestore(state.modeId);
+      closeModal();
+      toast('已导出草稿备份，本地草稿已清空');
+      refreshDraftStatus('未保存');
+    }));
+    row.appendChild(makeButton('从空白开始', 'btn', function () {
+      Storage.clearDraft(state.modeId);
+      Storage.clearFailedRestore(state.modeId);
+      closeModal();
+      refreshDraftStatus('未保存');
+      setHint('已从空白开始');
+    }));
+    wrap.appendChild(row);
+
+    openModal({ title: '草稿恢复失败', node: wrap, bodyClass: 'is-plain' });
   }
 
   /**
@@ -225,9 +342,12 @@
     updateModeButtons();
 
     // ---- 4) 用「目标模式自己的文档」重建新实例 ----
+    // 编辑器先以空白创建，内容一律走安全通道恢复：
+    // 内容崩溃时保住编辑器，原文进 failed-restore 备份，而不是整个舞台报错。
     try {
+      var restoreHtml = currentDoc().html || EMPTY_HTML;
       state.instance = global.AppEditor.create(mode, {
-        html: currentDoc().html || EMPTY_HTML,
+        html: EMPTY_HTML,
         onChange: function () {
           refreshStats();
           refreshSourceSoon();
@@ -235,6 +355,9 @@
         },
         onSelectionChange: refreshStats
       });
+      if (restoreHtml && restoreHtml !== EMPTY_HTML) {
+        setEditorHtmlSafe(restoreHtml);
+      }
     } catch (err) {
       renderStageError(err);
       return;
@@ -256,11 +379,14 @@
     Storage.saveLastMode(modeId);
 
     // ---- 7) 界面状态 ----
+    // 注意：这里不能 scheduleDraft() —— 启动/切换时若编辑器还是空白，
+    // 自动保存会用空内容覆盖掉 localStorage 里的旧草稿（数据丢失）。
+    // 自动保存只由 onChange（真实编辑行为）驱动。
     setStatus('mode', mode.label);
     setHint(mode.description || '');
+    refreshTemplateStatus();
     refreshStats();
     refreshSource();
-    scheduleDraft();
   }
 
   /* ======================= 模态框 ======================= */
@@ -300,11 +426,12 @@
 
   /* ======================= 动作实现 ======================= */
 
-  /** 导出载荷：正文原样来自编辑器，模式决定文档外壳（两个模式导出各自独立） */
+  /** 导出载荷：正文原样来自编辑器；模板版式（若有）优先于模式外壳 */
   function documentPayload() {
     return {
       html: currentHtml(),
-      mode: state.modeId
+      mode: state.modeId,
+      template: currentTemplate()
     };
   }
 
@@ -415,7 +542,9 @@
       name.textContent = slot.name;
       var meta = doc.createElement('span');
       meta.className = 'slot-meta';
+      var tpl = slot.templateId ? findTemplate(slot.templateId) : null;
       meta.textContent = (Modes[slot.mode] ? Modes[slot.mode].label : slot.mode) +
+        (slot.templateId ? ' · 模板 ' + (tpl ? tpl.name : '已失效') : '') +
         ' · ' + Exporter.byteSize(slot.html || '') + ' · ' + datetime(slot.updatedAt);
       main.appendChild(name);
       main.appendChild(meta);
@@ -443,8 +572,9 @@
     var modeId = Modes[slot.mode] ? slot.mode : DEFAULT_MODE;
 
     // 写进「该模式自己的」文档槽，再切过去 —— 模式之间不共享内容
-    if (!docs[modeId]) docs[modeId] = { html: EMPTY_HTML };
+    if (!docs[modeId]) docs[modeId] = blankDoc();
     docs[modeId].html = slot.html || EMPTY_HTML;
+    docs[modeId].templateId = slot.templateId || '';
 
     closeModal();
     switchMode(modeId, { force: true });
@@ -475,7 +605,8 @@
     row.appendChild(makeButton('保存当前文档', 'btn btn-primary', function () {
       var item = Storage.saveSlot(input.value, {
         html: currentHtml(),
-        mode: state.modeId
+        mode: state.modeId,
+        templateId: currentDoc().templateId || ''
       });
       if (!item) {
         toast('保存失败：本地存储不可用或已超出配额', true);
@@ -507,10 +638,15 @@
         // 避免把文档外壳（模式皮肤）一起塞进编辑器；
         // 默认模式是纯内容导出（没有 article），直接取 body。
         var host = parsed.querySelector('article.doc') || parsed.body;
-        return { html: host ? host.innerHTML : trimmed };
+        var styles = Array.prototype.slice.call(parsed.querySelectorAll('style'))
+          .map(function (s) { return s.textContent; }).join('\n');
+        return {
+          html: host ? host.innerHTML : trimmed,
+          css: Templates.stripBaseCss(styles, Exporter.BASE_CSS)
+        };
       } catch (e) { /* 落到下面的兜底分支 */ }
     }
-    return { html: trimmed };
+    return { html: trimmed, css: '' };
   }
 
   function applyImport(result, sourceLabel) {
@@ -518,14 +654,25 @@
     var editor = liveEditor();
     if (!editor) { toast('编辑器尚未就绪', true); return; }
 
-    currentDoc().html = result.html;
-    editor.setHtml(result.html);
+    var target = currentDoc();
+    // 「导入 HTML」只导入正文：版式层不属于正文，需要走「模板 → 导入模板文件」
+    target.templateId = '';
+
+    if (!setEditorHtmlSafe(result.html)) {
+      toast('导入失败：内容触发了编辑器格式引擎的已知崩溃，原文已留存', true);
+      return;
+    }
 
     refreshStats();
     refreshSource();
+    refreshTemplateStatus();
     saveDraftNow();
     closeModal();
     toast('已导入' + (sourceLabel ? '：' + sourceLabel : ''));
+
+    if (result.css) {
+      setHint('文件里含版式样式，已忽略 —— 如需保留，请用「模板 → 导入模板文件」');
+    }
   }
 
   function actionImport() {
@@ -573,11 +720,15 @@
     if (!editor) return;
     var html = global.AppSample.html;
 
-    currentDoc().html = html;
+    var target = currentDoc();
+    target.html = html;
+    target.templateId = '';   // 示例内容不带模板版式
+
     editor.setHtml(html);
 
     refreshStats();
     refreshSource();
+    refreshTemplateStatus();
     saveDraftNow();
     toast('已插入示例内容');
   }
@@ -588,11 +739,15 @@
     if (!editor) return;
     if (!global.confirm('确定清空当前模式的编辑内容？此操作不可撤销（可先用「导出 HTML」备份）。')) return;
 
-    currentDoc().html = EMPTY_HTML;
+    var target = currentDoc();
+    target.html = EMPTY_HTML;
+    target.templateId = '';   // 清空同时卸下模板版式
+
     editor.setHtml(EMPTY_HTML);
 
     refreshStats();
     refreshSource();
+    refreshTemplateStatus();
     saveDraftNow();
     toast('已清空');
   }
@@ -614,6 +769,338 @@
     global.setTimeout(function () { if (state.instance) refreshStats(); }, 220);
   }
 
+  /* ======================= 富文本模板（双轨） =======================
+     模板 = 内容层（进编辑器，可继续编辑）+ 版式层（只在预览 / 导出时注入）。
+     来源三路：内置种子（JS）→ templates/ 外部文件（运行期 fetch）→ 用户自建（localStorage）。
+     详见 js/content/templates.js 顶部的说明与 README「模板编写规范」。          */
+
+  function allTemplates() {
+    var out = [];
+
+    (Templates.SEEDS || []).forEach(function (t) {
+      out.push({
+        id: t.id, name: t.name, note: t.note, accent: t.accent,
+        content: t.content, skin: t.skin, builtin: true, source: '内置'
+      });
+    });
+
+    externalTemplates.forEach(function (t) {
+      out.push({
+        id: t.id, name: t.name, note: t.note, accent: t.accent,
+        content: t.content, skin: t.skin, builtin: true,
+        external: true, source: 'templates/', notes: t.notes
+      });
+    });
+
+    Storage.listTemplates().forEach(function (t) {
+      out.push({
+        id: t.id, name: t.name, note: t.note || '', accent: '#378add',
+        content: t.content,
+        skin: t.css ? { wrapperClass: t.wrapperClass || 'doc doc--tpl', css: t.css } : null,
+        builtin: false, source: '我的', notes: t.notes
+      });
+    });
+
+    return out;
+  }
+
+  function findTemplate(id) {
+    if (!id) return null;
+    var list = allTemplates();
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
+  }
+
+  /** 当前模式文档套用的模板（找不到返回 null，例如用户清过浏览器数据） */
+  function currentTemplate() {
+    return findTemplate(currentDoc().templateId);
+  }
+
+  function refreshTemplateStatus() {
+    var tpl = currentTemplate();
+    setStatus('template', tpl ? tpl.name : '无');
+  }
+
+  /** 缩略图用的完整页面：与「导出」同源同构，所见即所得 */
+  function thumbDocument(tpl) {
+    return Exporter.buildDocument({
+      html: tpl.content || EMPTY_HTML,
+      mode: state.modeId,
+      template: tpl,
+      title: tpl.name
+    });
+  }
+
+  function renderTemplateCard(tpl, host, refresh, withThumb) {
+    var card = doc.createElement('article');
+    card.className = 'tpl-card';
+    card.setAttribute('data-template-id', tpl.id);
+    if (tpl.accent) card.style.setProperty('--tpl-accent', tpl.accent);
+
+    /* ---- 小窗预览：真实渲染 + 等比缩放 ---- */
+    var thumb = doc.createElement('div');
+    thumb.className = 'tpl-thumb';
+
+    if (withThumb) {
+      var frame = doc.createElement('iframe');
+      frame.className = 'tpl-thumb-frame';
+      // 最严沙箱：模板里的 <script> 一律不执行，模板文件无法影响主页面
+      frame.setAttribute('sandbox', '');
+      frame.setAttribute('scrolling', 'no');
+      frame.setAttribute('tabindex', '-1');
+      frame.setAttribute('title', tpl.name + ' 模板预览');
+      frame.srcdoc = thumbDocument(tpl);
+      thumb.appendChild(frame);
+    } else {
+      var lazy = doc.createElement('div');
+      lazy.className = 'tpl-thumb-lazy';
+      lazy.textContent = '（缩略图已省略）';
+      thumb.appendChild(lazy);
+    }
+
+    var badge = doc.createElement('span');
+    badge.className = 'tpl-badge' + (tpl.builtin ? '' : ' is-user');
+    badge.textContent = tpl.source || '内置';
+    thumb.appendChild(badge);
+    card.appendChild(thumb);
+
+    /* ---- 文字信息 ---- */
+    var body = doc.createElement('div');
+    body.className = 'tpl-body';
+
+    var name = doc.createElement('div');
+    name.className = 'tpl-name';
+    name.textContent = tpl.name;
+    body.appendChild(name);
+
+    if (tpl.note) {
+      var note = doc.createElement('div');
+      note.className = 'tpl-note';
+      note.textContent = tpl.note;
+      body.appendChild(note);
+    }
+
+    // 保真预检：列出 wangEditor 承载不了、已被标准化的地方。
+    // 模板若已带 notes（导入时算好的），直接沿用 —— sanitize 是幂等的，重算永远是 0。
+    var tplNotes = (tpl.notes && tpl.notes.length)
+      ? tpl.notes
+      : Templates.sanitize(tpl.content || '').notes;
+    if (tplNotes.length) {
+      var details = doc.createElement('details');
+      details.className = 'tpl-notes';
+      var sum = doc.createElement('summary');
+      sum.textContent = '标准化 ' + tplNotes.length + ' 处';
+      details.appendChild(sum);
+      var ul = doc.createElement('ul');
+      tplNotes.forEach(function (n) {
+        var li = doc.createElement('li');
+        li.textContent = n;
+        ul.appendChild(li);
+      });
+      details.appendChild(ul);
+      body.appendChild(details);
+    }
+    card.appendChild(body);
+
+    /* ---- 操作 ---- */
+    var actions = doc.createElement('div');
+    actions.className = 'tpl-actions';
+    actions.appendChild(makeButton('使用模板', 'btn btn-mini btn-primary', function () {
+      applyTemplate(tpl);
+    }));
+    actions.appendChild(makeButton('导出', 'btn btn-mini', function () {
+      exportTemplate(tpl);
+    }));
+
+    if (!tpl.builtin) {
+      actions.appendChild(makeButton('重命名', 'btn btn-mini', function () {
+        var next = global.prompt('重命名模板', tpl.name);
+        if (next == null) return;
+        if (!Storage.renameTemplate(tpl.id, next)) { toast('重命名失败', true); return; }
+        refresh();
+        toast('已重命名模板');
+      }));
+      actions.appendChild(makeButton('删除', 'btn btn-mini', function () {
+        if (!global.confirm('确定删除模板「' + tpl.name + '」？此操作不可撤销。')) return;
+        Storage.removeTemplate(tpl.id);
+        refresh();
+        toast('已删除模板：' + tpl.name);
+      }));
+    }
+
+    card.appendChild(actions);
+    host.appendChild(card);
+  }
+
+  function renderTemplateGrid(grid) {
+    grid.innerHTML = '';
+    var list = allTemplates();
+
+    var groups = [
+      { title: '内置模板', items: list.filter(function (t) { return t.source === '内置'; }) },
+      { title: 'templates/ 目录', items: list.filter(function (t) { return t.external; }) },
+      { title: '我的模板', items: list.filter(function (t) { return t.source === '我的'; }) }
+    ];
+
+    var total = 0;
+    groups.forEach(function (g) {
+      if (!g.items.length) return;
+      var head = doc.createElement('h3');
+      head.className = 'tpl-group';
+      head.textContent = g.title + ' · ' + g.items.length;
+      grid.appendChild(head);
+      g.items.forEach(function (tpl) {
+        renderTemplateCard(tpl, grid, function () { renderTemplateGrid(grid); }, total < MAX_THUMBS);
+        total++;
+      });
+    });
+
+    if (!list.length) {
+      var empty = doc.createElement('p');
+      empty.className = 'import-hint';
+      empty.textContent = '暂无模板。';
+      grid.appendChild(empty);
+    }
+  }
+
+  function openTemplateGallery() {
+    var wrap = doc.createElement('div');
+    wrap.className = 'tpl-gallery';
+
+    var hint = doc.createElement('p');
+    hint.className = 'import-hint';
+    hint.innerHTML = '模板分两层：<b>正文</b>进入编辑器可继续编辑，<b>版式</b>' +
+      '（背景 / 字体 / 行距 / 页宽）只在预览与导出时套用。' +
+      '使用模板会替换当前模式的全部内容（当前内容会先自动存为草稿）。';
+    wrap.appendChild(hint);
+
+    var grid = doc.createElement('div');
+    grid.className = 'tpl-grid';
+    wrap.appendChild(grid);
+
+    renderTemplateGrid(grid);
+
+    var tools = [
+      makeButton('从当前文档另存为模板', 'btn', function () { saveCurrentAsTemplate(grid); }),
+      makeButton('导入模板文件', 'btn', function () {
+        var input = doc.getElementById('template-file');
+        if (!input) { toast('未找到文件输入控件', true); return; }
+        input.value = '';
+        input.click();
+      })
+    ];
+
+    openModal({ title: '富文本模板', node: wrap, tools: tools, bodyClass: 'is-plain is-templates' });
+  }
+
+  /** 使用模板：内容层进编辑器，版式层记进当前模式的文档槽 */
+  function applyTemplate(tpl) {
+    var editor = liveEditor();
+    if (!editor) { toast('编辑器尚未就绪', true); return; }
+
+    var modeLabel = Modes[state.modeId] ? Modes[state.modeId].label : state.modeId;
+    if (!global.confirm('使用模板「' + tpl.name + '」会替换「' + modeLabel +
+      '」的全部内容（当前内容会先自动存为草稿）。是否继续？')) return;
+
+    saveDraftNow();
+
+    var res = Templates.sanitize(tpl.content || '');
+    var target = currentDoc();
+    target.templateId = tpl.id;
+
+    if (!setEditorHtmlSafe(res.html)) {
+      target.templateId = '';
+      toast('模板「' + tpl.name + '」应用失败：内容触发了编辑器崩溃，已从备份找回', true);
+      return;
+    }
+    refreshTemplateStatus();
+    closeModal();
+
+    // setHtml 的渲染是异步的：稍后再读一次统计 / 源码，避免拿到旧值
+    global.setTimeout(function () {
+      refreshStats();
+      refreshSource();
+      saveDraftNow();
+    }, 80);
+
+    toast('已应用模板：' + tpl.name + (res.notes.length ? '（标准化 ' + res.notes.length + ' 处）' : ''));
+    setHint('模板「' + tpl.name + '」' + (tpl.skin ? '：导出将套用其版式' : '：无版式层，导出沿用当前模式皮肤'));
+  }
+
+  /** 导出模板文件：格式与本应用的导出文档一致，可再被「导入模板文件」读回 */
+  function exportTemplate(tpl) {
+    var html = Exporter.buildDocument({
+      html: tpl.content || EMPTY_HTML,
+      mode: state.modeId,
+      template: tpl,
+      title: tpl.name
+    });
+    var filename = Exporter.safeFilename('模板-' + tpl.name, '.html', '模板');
+    Exporter.download(filename, html, 'text/html');
+    toast('已导出：' + filename);
+    setHint('把该文件放进项目 templates/ 目录，刷新后即成系统模板');
+  }
+
+  /** 从当前文档另存为模板（内容层 = 当前正文；版式层沿用当前模式） */
+  function saveCurrentAsTemplate(grid) {
+    var editor = liveEditor();
+    if (!editor) { toast('编辑器尚未就绪', true); return; }
+
+    var name = global.prompt('模板名称', '我的模板-' + Exporter.timestamp());
+    if (name == null) return;
+    name = String(name).trim();
+    if (!name) { toast('模板名称不能为空', true); return; }
+
+    var res = Templates.sanitize(currentHtml());
+    if (!res.html || res.html === EMPTY_HTML) {
+      toast('当前内容为空，未保存模板', true);
+      return;
+    }
+
+    var modeLabel = Modes[state.modeId] ? Modes[state.modeId].label : state.modeId;
+    var item = Storage.saveTemplate({
+      name: name,
+      note: '另存自当前文档（' + modeLabel + '）；版式沿用当前模式，不含自定义版式层',
+      content: res.html,
+      notes: res.notes
+    });
+
+    if (!item) { toast('保存失败：本地存储不可用或已超出配额', true); return; }
+    if (grid) renderTemplateGrid(grid);
+    toast('已保存模板：' + item.name + (res.notes.length ? '（标准化 ' + res.notes.length + ' 处）' : ''));
+  }
+
+  /** 导入模板文件：整份 HTML 拆成「正文层 + 版式层」 */
+  function importTemplateFile(file, grid) {
+    var reader = new global.FileReader();
+    reader.onload = function () {
+      var parsed = Templates.parseDocumentTemplate(String(reader.result || ''), Exporter.BASE_CSS);
+      var clean = Templates.sanitize(parsed.content || '');
+
+      if (!clean.html || clean.html === EMPTY_HTML) {
+        toast('该文件里没有可用的正文内容', true);
+        return;
+      }
+
+      var name = (parsed.name || file.name.replace(/\.html?$/i, '')).trim() || '导入的模板';
+      var item = Storage.saveTemplate({
+        name: name,
+        note: parsed.note || ('导入自文件 ' + file.name + (parsed.css ? '，含版式层' : '，仅正文层')),
+        content: clean.html,
+        css: parsed.css || '',
+        wrapperClass: 'doc doc--tpl',
+        notes: clean.notes
+      });
+
+      if (!item) { toast('保存失败：本地存储不可用或已超出配额', true); return; }
+      if (grid) renderTemplateGrid(grid);
+      toast('已导入模板：' + item.name + (parsed.css ? '（含版式层）' : '（仅正文层）'));
+      setHint('同名模板会被覆盖：' + item.name);
+    };
+    reader.onerror = function () { toast('文件读取失败', true); };
+    reader.readAsText(file, 'utf-8');
+  }
+
   /* ======================= 事件绑定 ======================= */
 
   var ACTIONS = {
@@ -624,6 +1111,7 @@
     'export': actionExport,
     'save': actionSave,
     'import': actionImport,
+    'templates': openTemplateGallery,
     'sample': actionSample,
     'clear': actionClear,
     'refresh-source': refreshSource,
@@ -653,6 +1141,17 @@
     $$('[data-modal-close]').forEach(function (node) {
       node.addEventListener('click', closeModal);
     });
+
+    // 模板文件导入（与「导入 HTML」分开，避免语义混淆）
+    var tplFileInput = doc.getElementById('template-file');
+    if (tplFileInput) {
+      tplFileInput.addEventListener('change', function () {
+        var file = tplFileInput.files && tplFileInput.files[0];
+        if (!file) return;
+        var grid = doc.querySelector('.tpl-grid');
+        importTemplateFile(file, grid);
+      });
+    }
 
     doc.addEventListener('keydown', function (event) {
       var key = event.key;
@@ -702,6 +1201,57 @@
     return /[?&]demo=1/.test(global.location.search);
   }
 
+  /** 草稿恢复确认：默认每次询问，勾选后记住偏好（auto / never） */
+  function openDraftRestoreModal(modeId, pending) {
+    var modeLabel = Modes[modeId] ? Modes[modeId].label : modeId;
+    var wrap = doc.createElement('div');
+
+    var hint = doc.createElement('p');
+    hint.className = 'import-hint';
+    hint.textContent = '检测到上次自动保存的「' + modeLabel + '」草稿（更新于 ' +
+      datetime(pending.updatedAt || Date.now()) + '）。是否恢复到编辑器？';
+    wrap.appendChild(hint);
+
+    var chkRow = doc.createElement('label');
+    chkRow.className = 'restore-pref';
+    var chk = doc.createElement('input');
+    chk.type = 'checkbox';
+    chkRow.appendChild(chk);
+    chkRow.appendChild(doc.createTextNode('记住我的选择，以后刷新不再询问'));
+    wrap.appendChild(chkRow);
+
+    var row = doc.createElement('div');
+    row.className = 'save-row';
+
+    function applyChoice(wantRestore) {
+      if (chk.checked) {
+        Storage.saveRestorePref(wantRestore ? 'auto' : 'never');
+      }
+      closeModal();
+      if (!wantRestore) {
+        // 草稿留在 localStorage，直到用户新内容保存时自然覆盖
+        refreshDraftStatus('未保存');
+        setHint('已从空白开始（旧草稿仍保留，可在刷新时恢复）');
+        return;
+      }
+      docs[modeId].html = pending.html;
+      docs[modeId].templateId = pending.templateId || '';
+      if (state.modeId === modeId && setEditorHtmlSafe(pending.html)) {
+        refreshStats();
+        refreshSource();
+        refreshTemplateStatus();
+        refreshDraftStatus('已恢复草稿 ' + clock(pending.updatedAt || Date.now()));
+        toast('已恢复「' + modeLabel + '」的草稿');
+      }
+    }
+
+    row.appendChild(makeButton('恢复草稿', 'btn btn-primary', function () { applyChoice(true); }));
+    row.appendChild(makeButton('从空白开始', 'btn', function () { applyChoice(false); }));
+    wrap.appendChild(row);
+
+    openModal({ title: '恢复草稿', node: wrap, bodyClass: 'is-plain' });
+  }
+
   function bootstrap() {
     bindChrome();
 
@@ -721,31 +1271,70 @@
 
     ensureDocs();
 
-    // 每个模式各自载入自己的草稿；?demo=1 时统一载入示例内容
+    // 每个模式各自载入自己的草稿（含该文档套用的模板）；?demo=1 时统一载入示例内容
     Object.keys(Modes).forEach(function (id) {
       if (demo) {
         docs[id].html = global.AppSample ? global.AppSample.html : EMPTY_HTML;
+        docs[id].templateId = '';
         return;
       }
       var own = Storage.available ? Storage.loadDraft(id) : null;
       docs[id].html = (own && own.html) ? own.html : EMPTY_HTML;
+      docs[id].templateId = (own && own.templateId) ? own.templateId : '';
     });
+
+    // 初始模式的草稿恢复遵循用户偏好：ask（弹窗确认）/ auto（直接恢复）/ never（空白启动）
+    var pendingDraft = null;
+    if (!demo) {
+      var pref = Storage.loadRestorePref();
+      var draft = Storage.available ? Storage.loadDraft(initial) : null;
+      var hasDraft = !!(draft && draft.html && draft.html !== EMPTY_HTML);
+
+      if (hasDraft && pref === 'ask') {
+        // 先把草稿从槽位取走，编辑器以空白启动，等用户决定
+        pendingDraft = {
+          html: docs[initial].html,
+          templateId: docs[initial].templateId || '',
+          updatedAt: draft.updatedAt
+        };
+        docs[initial].html = EMPTY_HTML;
+        docs[initial].templateId = '';
+      } else if (hasDraft && pref === 'never') {
+        docs[initial].html = EMPTY_HTML;
+        docs[initial].templateId = '';
+      }
+    }
 
     switchMode(initial, { force: true, silent: !demo });
 
-    var restored = demo ? null : Storage.loadDraft(initial);
+    if (pendingDraft) openDraftRestoreModal(initial, pendingDraft);
+
+    // 外部系统模板（templates/ 目录）异步载入，不阻塞首屏
+    if (Templates && typeof Templates.loadExternal === 'function') {
+      Templates.loadExternal(Exporter.BASE_CSS).then(function (list) {
+        externalTemplates = list || [];
+        if (externalTemplates.length) {
+          setHint('已载入 ' + externalTemplates.length + ' 个系统模板（templates/）');
+        }
+        refreshTemplateStatus();
+      });
+    }
 
     if (demo) {
       refreshDraftStatus('示例内容');
       setHint('已载入示例内容（?demo=1）');
-    } else {
-      refreshDraftStatus(restored
-        ? '已恢复草稿 ' + clock(restored.updatedAt || Date.now())
+    } else if (!pendingDraft) {
+      var draftNow = Storage.available ? Storage.loadDraft(initial) : null;
+      var autoRestored = docs[initial].html && docs[initial].html !== EMPTY_HTML;
+      refreshDraftStatus(autoRestored
+        ? '已恢复草稿 ' + clock((draftNow && draftNow.updatedAt) || Date.now())
         : '未保存');
-      if (restored && restored.html && restored.html !== EMPTY_HTML) {
+      if (autoRestored) {
         toast('已恢复「' + (Modes[initial] ? Modes[initial].label : initial) +
-          '」的草稿（' + clock(restored.updatedAt || Date.now()) + '）');
+          '」的草稿（' + clock((draftNow && draftNow.updatedAt) || Date.now()) + '）');
       }
+    } else {
+      refreshDraftStatus('待确认');
     }
   }
 
@@ -759,7 +1348,17 @@
     exportHtml: actionExport,
     preview: actionPreview,
     buildExport: buildExportHtml,
-    prettyHtml: function () { return Exporter.prettyHtml(currentHtml()); }
+    prettyHtml: function () { return Exporter.prettyHtml(currentHtml()); },
+
+    /* 模板相关：给控制台与自动化自检用 */
+    templates: allTemplates,
+    findTemplate: findTemplate,
+    currentTemplate: currentTemplate,
+    applyTemplate: applyTemplate,
+    exportTemplate: exportTemplate,
+    openTemplates: openTemplateGallery,
+    sanitize: function (html) { return Templates.sanitize(html); },
+    externalTemplates: function () { return externalTemplates; }
   };
 
   if (doc.readyState === 'loading') {

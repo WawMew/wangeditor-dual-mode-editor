@@ -141,12 +141,13 @@ switchMode(nextModeId)
  ├─ 2. 销毁旧实例     editor.destroy()                     ← 官方 API，内部连带销毁 textarea / toolbar / hoverbar
  │                    mode.onUnmount()                     ← 解绑该模式自己加的监听
  ├─ 3. 换皮肤与标识   body[data-mode] / html[data-app-mode] / 顶栏按钮态
- ├─ 4. 重建实例       AppEditor.create(mode, { html: docs[目标].html, onChange, onSelectionChange })
+ ├─ 4. 重建实例       AppEditor.create(mode, { html: 空白, onChange, onSelectionChange })
+ │                    → 内容走安全通道恢复：coalesceRuns 预合并 + setHtml 兜底 try/catch
  │                    → E.createEditor({ selector:'#editor-text-area', … })
  │                    → E.createToolbar({ editor, selector:'#editor-toolbar', … })
  ├─ 5. 同步地址栏     location.hash = #<modeId>
  ├─ 6. 记住模式       localStorage['…:last-mode'] = modeId ← 下次打开回到同一模式
- └─ 7. 刷新界面       状态栏 / 源码抽屉 / 统计行 / 自动草稿
+ └─ 7. 刷新界面       状态栏 / 源码抽屉 / 统计行（注意：此处不触发自动保存，防止空内容覆盖旧草稿）
 ```
 
 **为什么同一时刻只保留一个实例**：两种模式的 `scroll`、工具栏布局、宿主 DOM 结构都不同，
@@ -157,6 +158,24 @@ switchMode(nextModeId)
 **内容为什么各自独立**：内容从不驻留在 DOM 里，而是每次切换前用 `editor.getHtml()` 落回
 **当前模式自己的**槽位，重建时只读取**目标模式自己的**槽位。因此 default → qqdoc → default
 往返后，默认模式的内容原样还在，而 qqdoc 里的编辑结果**不会**出现在默认模式里。
+
+### 3.3 草稿恢复与崩溃防护
+
+**恢复确认**：刷新页面后若存在非空草稿，默认（`restore-pref = ask`）弹窗询问
+「恢复草稿 / 从空白开始」，可勾选「记住我的选择」（`auto` / `never`）不再询问。
+
+**崩溃防护（wangEditor 5.1.23 已知缺陷）**：从网页复制粘贴的内容常带有
+`<p><span>a，</span><span>b，</span><span>c。</span></p>` 这类相邻同格式文本片段，
+wangEditor 在 Slate 归一化时会对同一路径重复执行两次 `merge_node`，直接抛出
+`Cannot find a descendant at path [x,1]` 导致编辑器初始化失败。对策分三层：
+
+1. **预防**：所有内容入口（草稿恢复 / 导入 / 模板 / 打开存档）先过
+   `Templates.coalesceRuns()`，在 DOM 层把相邻同格式片段合并成一个；
+2. **兜底**：`setHtml` 再包 try/catch —— 万一仍崩溃，编辑器保住、原文写入
+   `localStorage['…:failed-restore:<modeId>']`，弹窗提供「导出草稿备份 / 从空白开始」；
+3. **防误覆盖**：实例重建不触发自动保存，自动保存只由真实编辑行为（onChange）驱动。
+
+自检断言：`coalesceRuns：相邻同格式 span 合并为一个`、`草稿恢复偏好默认 ask` 等。
 自检断言：`模式独立：qqdoc 的编辑结果没有进入默认模式`、`切回默认模式：它自己的内容仍在`、
 `草稿 key 按模式区分（两个 key 都存在）`。
 

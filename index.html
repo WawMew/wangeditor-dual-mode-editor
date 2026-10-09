@@ -38,6 +38,7 @@
         <button class="btn" type="button" data-action="export" title="导出为独立可直接打开的 .html 文件">导出 HTML</button>
         <button class="btn" type="button" data-action="save" title="保存到浏览器本地（localStorage）">保存</button>
         <span class="action-split" aria-hidden="true"></span>
+        <button class="btn" type="button" data-action="templates" title="选择富文本模板：正文进编辑器，版式用于预览与导出">模板</button>
         <button class="btn btn-ghost" type="button" data-action="import">导入</button>
         <button class="btn btn-ghost" type="button" data-action="sample">示例</button>
         <button class="btn btn-ghost" type="button" data-action="clear">清空</button>
@@ -70,6 +71,7 @@
       <span class="status-item">字数 <b data-status="total">0</b></span>
       <span class="status-item">选中 <b data-status="selected">0</b></span>
       <span class="status-item">草稿 <b data-status="draft">未保存</b></span>
+      <span class="status-item">模板 <b data-status="template">无</b></span>
       <span class="status-spacer"></span>
       <span class="status-hint" data-status="hint">就绪</span>
     </footer>
@@ -90,12 +92,14 @@
 
   <div id="toast" class="toast" hidden></div>
   <input type="file" id="import-file" accept=".html,.htm,text/html" hidden />
+  <input type="file" id="template-file" accept=".html,.htm,text/html" hidden />
 
   <!-- ===================== 脚本：依赖 → 能力 → 模式 → 引导 ===================== -->
   <script src="./vendor/wangeditor/index.js"></script>
   <script src="./js/features/storage.js"></script>
   <script src="./js/features/clipboard.js"></script>
   <script src="./js/features/exporter.js"></script>
+  <script src="./js/content/templates.js"></script>
   <script src="./js/editor-factory.js"></script>
   <script src="./js/modes/default.mode.js"></script>
   <script src="./js/modes/qqdoc.mode.js"></script>

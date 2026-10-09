@@ -231,6 +231,30 @@
       check('舞台内不残留上一模式的 DOM',
         !!d.querySelector('.qqdoc-page') && d.querySelectorAll('.default-shell').length === 0);
 
+      /* ---------- K. 文本片段预合并与草稿恢复偏好 ---------- */
+      check('AppTemplates.coalesceRuns 已注册',
+        typeof w.AppTemplates.coalesceRuns === 'function');
+      var co1 = w.AppTemplates.coalesceRuns('<p><span>a，</span><span>b，</span><span>c。</span></p>');
+      check('coalesceRuns：相邻同格式 span 合并为一个',
+        co1 === '<p><span>a，b，c。</span></p>', co1);
+      var co2 = w.AppTemplates.coalesceRuns('<p><span>x</span>\n<span>y</span></p>');
+      check('coalesceRuns：源码换行夹缝也被合并',
+        co2.indexOf('<span>xy</span>') >= 0, co2);
+      var co3 = w.AppTemplates.coalesceRuns(
+        '<p><span style="color:red">红1</span><span style="color:red">红2</span><span style="color:blue">蓝</span></p>');
+      check('coalesceRuns：不同格式不误合并',
+        co3.indexOf('红1红2') >= 0 && co3.indexOf('红1红2蓝') < 0, co3);
+      check('草稿恢复偏好默认 ask（每次询问）',
+        w.AppStorage.loadRestorePref() === 'ask');
+      w.AppStorage.saveRestorePref('auto');
+      check('草稿恢复偏好可写入并读回',
+        w.AppStorage.loadRestorePref() === 'auto');
+      w.AppStorage.saveRestorePref('ask');
+      check('恢复失败备份键 API 就绪',
+        typeof w.AppStorage.saveFailedRestore === 'function' &&
+        typeof w.AppStorage.getFailedRestore === 'function' &&
+        typeof w.AppStorage.clearFailedRestore === 'function');
+
       /* ---------- J. 剪贴板与运行时错误 ---------- */
       check('剪贴板 API 已注册（富文本 + 纯文本 + 回退）',
         typeof w.AppClipboard.copyRich === 'function' &&

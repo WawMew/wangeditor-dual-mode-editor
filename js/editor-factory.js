@@ -43,7 +43,12 @@
   }
 
   function buildMenuConf() {
-    return {
+    // 格式白名单：模板内容层允许写的字号 / 行距 / 字体，必须与菜单列表一致，
+    // 否则 wangEditor 在 setHtml 时会把「列表外的取值」直接丢掉。
+    // 单一事实来源放在 js/content/templates.js 的 FORMAT_LISTS。
+    var F = (global.AppTemplates && global.AppTemplates.FORMAT_LISTS) || null;
+
+    var menuConf = {
       // 网络图片 / 插入视频走 URL 输入，开箱即用；
       // 本地上传在无服务端的情况下转为 dataURL，保证离线可跑。
       uploadImage: {
@@ -64,6 +69,14 @@
         }
       }
     };
+
+    if (F) {
+      if (F.fontSize) menuConf.fontSize = { fontSizeList: F.fontSize.slice() };
+      if (F.lineHeight) menuConf.lineHeight = { lineHeightList: F.lineHeight.slice() };
+      if (F.fontFamily) menuConf.fontFamily = { fontFamilyList: F.fontFamily.slice() };
+    }
+
+    return menuConf;
   }
 
   /* ---------------- 创建 ---------------- */

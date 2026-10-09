@@ -15,6 +15,9 @@
       与 <article class="doc doc--qqdoc"> 外壳，独立打开即还原「灰底 + 850px 白纸」。
    3) 两者共同遵守：正文原样取自 editor.getHtml()，不注入任何文案
       （无「未命名文档」占位、无工具名 / 时间水印）。
+   4) 模板（富文本模板功能）的版式层优先于模式皮肤：
+      模板 skin 非空时，即使处于默认模式也走「完整文档」导出，
+      并在 head 输出 wangeditor-template-* 标记，便于再导入还原。
    ========================================================================== */
 (function (global) {
   'use strict';
@@ -82,6 +85,17 @@
 
   function resolveSkin(mode) {
     return MODE_SKINS[mode] || MODE_SKINS['default'];
+  }
+
+  /**
+   * 皮肤解析优先级：模板版式层 > 模式皮肤。
+   * 模板一旦带版式（skin.css 非空），导出就走「完整文档」分支 —— 即便是默认模式，
+   * 否则模板的背景 / 正文字体 / 页宽都无处安放。
+   */
+  function resolveSkinFor(options) {
+    var T = global.AppTemplates;
+    var tplSkin = (T && options.template) ? T.skinOf(options.template) : null;
+    return tplSkin || resolveSkin(options.mode);
   }
 
   /* ---------- 文本工具 ---------- */
@@ -168,8 +182,11 @@
 
   function buildDocument(options) {
     options = options || {};
-    var skin = resolveSkin(options.mode);
+    var skin = resolveSkinFor(options);
     var bare = skin.bare === true;
+    // 模板导出的模板标记（供「导出模板文件 → 手工放进 templates/」再导入时还原）
+    var tpl = options.template || null;
+    var skinMode = tpl ? ('tpl:' + escapeHtml(tpl.id)) : escapeHtml(options.mode);
 
     // 标题：空即不输出，绝不注入占位文案
     var title = String(options.title == null ? '' : options.title).trim();
@@ -193,8 +210,10 @@
       return bareOut.join('\n');
     }
 
-    /* 完整文档（仿腾讯文档模式） */
+    /* 完整文档（仿腾讯文档模式 / 带版式的模板） */
     var stamp = timestamp();
+    if (!title && tpl && tpl.name) title = tpl.name;
+
     var out = [
       '<!DOCTYPE html>',
       '<html lang="zh-CN">',
@@ -204,16 +223,28 @@
       '<title>' + escapeHtml(title) + '</title>',
       /* 元信息只留在 head，不进正文 */
       '<meta name="generator" content="wangEditor v5 双模式富文本工作台" />',
-      '<meta name="source-mode" content="' + escapeHtml(skin.id) + '" />',
-      '<meta name="exported-at" content="' + stamp + '" />',
+      '<meta name="source-mode" content="' + skinMode + '" />',
+      '<meta name="exported-at" content="' + stamp + '" />'
+    ];
+
+    if (tpl) {
+      out.push('<meta name="wangeditor-template" content="1" />');
+      out.push('<meta name="wangeditor-template-name" content="' + escapeHtml(tpl.name || '') + '" />');
+      if (tpl.note) {
+        out.push('<meta name="wangeditor-template-note" content="' + escapeHtml(tpl.note) + '" />');
+      }
+    }
+
+    out.push(
       '<style>',
       BASE_CSS,
       skin.css,
       '</style>',
       '</head>',
-      '<body data-mode="' + escapeHtml(skin.id) + '">',
+      '<body data-mode="' + escapeHtml(options.mode || 'default') + '"' +
+      (tpl ? ' data-template="' + escapeHtml(tpl.id) + '"' : '') + '>',
       '<article class="' + skin.wrapperClass + '">'
-    ];
+    );
 
     if (title) {
       out.push('<h1 class="doc-title">' + escapeHtml(title) + '</h1>');
@@ -252,6 +283,7 @@
     BASE_CSS: BASE_CSS,
     MODE_SKINS: MODE_SKINS,
     resolveSkin: resolveSkin,
+    resolveSkinFor: resolveSkinFor,
     escapeHtml: escapeHtml,
     safeFilename: safeFilename,
     timestamp: timestamp,

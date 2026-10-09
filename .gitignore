@@ -30,3 +30,7 @@ diag/
 .env
 .env.local
 !.env.example
+
+# ---- 调试探针（开发期工具，不入库）----
+_probe/
+_probe-*.html
