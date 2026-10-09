@@ -503,8 +503,9 @@
     if (looksLikeDocument) {
       try {
         var parsed = new global.DOMParser().parseFromString(trimmed, 'text/html');
-        // 本项目导出的文件外层是 <article class="doc …">：取其内部内容，
-        // 避免把文档外壳（模式皮肤）一起塞进编辑器
+        // 仿腾讯文档模式的导出外层是 <article class="doc …">：取其内部内容，
+        // 避免把文档外壳（模式皮肤）一起塞进编辑器；
+        // 默认模式是纯内容导出（没有 article），直接取 body。
         var host = parsed.querySelector('article.doc') || parsed.body;
         return { html: host ? host.innerHTML : trimmed };
       } catch (e) { /* 落到下面的兜底分支 */ }

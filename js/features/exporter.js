@@ -5,11 +5,16 @@
      previewSrcdoc(...)                 : 供预览模态框的 iframe.srcdoc 使用
      prettyHtml(html)                   : HTML 源码格式化（仅用于展示）
 
-   设计原则
-   1) 导出内容 = 编辑器内容。除用户输入的标题外，不注入任何文案（无「未命名文档」、
-      无工具名/时间水印）。生成器与时间等元信息只写进 <head> 的 meta，不进正文。
-   2) 两种模式各自独立：正文 HTML 相同（模式切换本就保持内容），差异体现在文档
-      外壳与版式上 —— 默认模式为朴素白底文档，仿腾讯文档模式为「灰底 + 850px 白纸」。
+   导出策略（两种模式各按自己的定位导出）
+   1) 默认模式 = 纯内容导出（bare）
+      只输出 <!DOCTYPE html> + <meta charset> + <body data-mode="default"> + 正文，
+      不注入任何 <style>、<meta>、<article> 包装或文案。适合直接贴进博客 / BBS 后台，
+      由目标站点的样式接管排版。两份导出文件之间只差 body 上的 data-mode 标记。
+   2) 仿腾讯文档模式 = 完整文档导出
+      保留完整 <head>（viewport / generator / source-mode / exported-at / 内嵌样式）
+      与 <article class="doc doc--qqdoc"> 外壳，独立打开即还原「灰底 + 850px 白纸」。
+   3) 两者共同遵守：正文原样取自 editor.getHtml()，不注入任何文案
+      （无「未命名文档」占位、无工具名 / 时间水印）。
    ========================================================================== */
 (function (global) {
   'use strict';
@@ -51,20 +56,14 @@
   ].join('\n');
 
   /* ---------- 各模式的文档外壳 ----------
-     wrapperClass 用同一套共享类 .doc，再叠加模式修饰类；
-     body[data-mode] 便于导出的文件被再次识别 / 二次加工。            */
+     bare: true  → 纯内容导出：不注入 <style> / meta / 包装节点，只保留 body 上的
+                   data-mode 标记（两种模式的导出因此仍可被识别与再次导入）。
+     其余模式    → 完整文档：head 元信息 + 内嵌样式 + <article> 外壳。   */
   var MODE_SKINS = {
     'default': {
       id: 'default',
       label: '默认模式',
-      wrapperClass: 'doc doc--default',
-      css: [
-        /* 朴素阅读态：白底、无卡片装饰、左侧自然对齐，避免大段空白 */
-        'body{background:#fff}',
-        '.doc--default{max-width:920px;margin:0;padding:40px 48px 80px}',
-        '@media(max-width:680px){.doc--default{padding:24px 20px 60px}}',
-        '.doc--default .doc-title{font-size:28px;line-height:1.35;margin:0 0 20px}'
-      ].join('\n')
+      bare: true
     },
     'qqdoc': {
       id: 'qqdoc',
@@ -170,13 +169,32 @@
   function buildDocument(options) {
     options = options || {};
     var skin = resolveSkin(options.mode);
+    var bare = skin.bare === true;
 
     // 标题：空即不输出，绝不注入占位文案
     var title = String(options.title == null ? '' : options.title).trim();
     // 正文：原样来自编辑器 getHtml()，不做任何包装或改写
     var body = options.html == null ? '' : String(options.html);
-    var stamp = timestamp();
 
+    /* 极简（默认模式）：DOCTYPE / charset / body 三样是「能被浏览器正确打开」
+       的最低要求，其余一律不注入 —— 没有 <style>、没有 <meta>、没有包装节点。 */
+    if (bare) {
+      var bareOut = [
+        '<!DOCTYPE html>',
+        '<html lang="zh-CN">',
+        '<head>',
+        '<meta charset="UTF-8" />'
+      ];
+      if (title) bareOut.push('<title>' + escapeHtml(title) + '</title>');
+      bareOut.push('</head>');
+      bareOut.push('<body data-mode="' + escapeHtml(skin.id) + '">');
+      if (title) bareOut.push('<h1>' + escapeHtml(title) + '</h1>');
+      bareOut.push(body, '</body>', '</html>');
+      return bareOut.join('\n');
+    }
+
+    /* 完整文档（仿腾讯文档模式） */
+    var stamp = timestamp();
     var out = [
       '<!DOCTYPE html>',
       '<html lang="zh-CN">',

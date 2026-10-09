@@ -89,16 +89,25 @@
       /* ---------- D. 导出与格式化 ---------- */
       var docHtml = w.App.buildExport();
       check('导出文档是完整 HTML', /^<!DOCTYPE html>/.test(docHtml) && /<\/html>\s*$/.test(docHtml));
-      check('导出文档内嵌阅读样式与正文',
-        docHtml.indexOf('--accent') >= 0 && docHtml.indexOf('<strong>world</strong>') >= 0);
+      check('默认模式导出为纯内容：无 <style>、无 <article>、无多余 meta',
+        docHtml.indexOf('<style') < 0 && docHtml.indexOf('<article') < 0 &&
+        docHtml.indexOf('name="generator"') < 0);
+      check('默认模式导出仍完整包含编辑器正文',
+        docHtml.indexOf('<strong>world</strong>') >= 0);
       var pretty = w.App.prettyHtml();
       check('HTML 源码格式化产生多行', pretty.split('\n').length > 2, pretty.split('\n').length + ' 行');
       check('字节数格式化可用', /B|KB|MB/.test(w.AppExporter.byteSize(docHtml)));
 
       /* ---------- D2. 导出内容一致性 + 模式独立性 ---------- */
       var E = w.AppExporter;
-      // 只看 </style> 之后的正文，避免把 CSS 里的 .doc-title 规则误判为节点
-      function bodyOf(s) { return s.slice(s.indexOf('</style>')); }
+      // 取 <body> 与 </body> 之间的内容（默认模式没有 </style>，不能按它切）
+      function bodyOf(s) {
+        var i = s.indexOf('<body');
+        var j = i < 0 ? -1 : s.indexOf('>', i);
+        if (j < 0) return s;
+        var end = s.lastIndexOf('</body>');
+        return s.slice(j + 1, end < 0 ? s.length : end);
+      }
 
       var emptyDefault = E.buildDocument({ title: '', html: '<p><br></p>', mode: 'default' });
       var emptyQqdoc = E.buildDocument({ title: '', html: '<p><br></p>', mode: 'qqdoc' });
@@ -120,8 +129,7 @@
         bodyOf(E.buildDocument({ title: '', html: editor.getHtml(), mode: 'default' }))
           .indexOf(editor.getHtml()) >= 0);
 
-      check('默认模式导出外壳为 doc--default',
-        emptyDefault.indexOf('class="doc doc--default"') >= 0);
+      check('默认模式导出不含 <article> 包装节点', emptyDefault.indexOf('<article') < 0);
       check('仿腾讯文档导出外壳为 doc--qqdoc',
         emptyQqdoc.indexOf('class="doc doc--qqdoc"') >= 0);
       check('两种模式导出的 HTML 不相同（模式真正参与导出）',
@@ -130,14 +138,15 @@
         emptyDefault.indexOf('<body data-mode="default">') >= 0);
       check('仿腾讯文档导出 body[data-mode="qqdoc"]',
         emptyQqdoc.indexOf('<body data-mode="qqdoc">') >= 0);
-      check('默认模式导出为朴素白底（无灰画布）',
-        emptyDefault.indexOf('#f2f2f2') < 0);
+      check('默认模式导出不注入样式与画布色',
+        emptyDefault.indexOf('<style') < 0 && emptyDefault.indexOf('#f2f2f2') < 0);
       check('仿腾讯文档导出为灰底 + 850px 白纸',
         emptyQqdoc.indexOf('#f2f2f2') >= 0 && emptyQqdoc.indexOf('width:850px') >= 0);
-      check('默认模式导出内容左侧对齐（不再居中产生大段空白）',
-        emptyDefault.indexOf('margin:0 auto') < 0 && emptyDefault.indexOf('margin:0;') >= 0);
-      check('导出 HTML 包含换行样式（超长文本不溢出屏幕）',
-        emptyDefault.indexOf('overflow-wrap:break-word') >= 0);
+      check('默认模式导出外壳只剩 DOCTYPE / charset / body 三样',
+        emptyDefault.split('\n').length <= 10,
+        emptyDefault.split('\n').length + ' 行');
+      check('仿腾讯文档导出保留换行样式（超长文本不溢出屏幕）',
+        emptyQqdoc.indexOf('overflow-wrap:break-word') >= 0);
       check('模式按钮上不再出现「对齐xxx示例」的注释文案',
         !d.querySelector('.mode-btn-sub'));
 

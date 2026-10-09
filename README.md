@@ -9,23 +9,39 @@
 | **仿腾讯文档** | <https://www.wangeditor.com/demo/like-qq-doc.html> | 工具栏贴顶整行居中（1350px / `#FCFCFC`）、隐藏「全屏」菜单（41 → 40 项）、浅灰画布 `#f5f5f5` + 居中 850px 白色纸张（描边 + 阴影）、**纸张内无独立标题栏、开头即正文**、`scroll: false` 页面级滚动、点击纸张空白处聚焦末尾 |
 
 两种模式**完全独立**：各自持有自己的文档与自动草稿，切换模式不传递内容。
-还原效果已由自动化自检逐条断言（**64 项全部通过**），详见 [`_selftest.html`](./_selftest.html)。
+还原效果已由自动化自检逐条断言（**65 项全部通过**），详见 [`_selftest.html`](./_selftest.html)。
 
 ---
 
 ## 一、快速运行
 
-```bash
-# 方式一：本地静态服务（推荐，剪贴板 API 与 localStorage 均可正常工作）
-python -m http.server 8321 --bind 127.0.0.1
-# 然后打开 http://127.0.0.1:8321/index.html
+**方式一：双击 `start-server.cmd`（Windows，推荐）**
 
-# Windows 可直接双击 start-server.cmd
+零依赖 —— 不需要装 Python 或 Node，直接用 Windows 自带的脚本宿主起服务：
+
+```
+start-server.cmd           # 默认端口 8321
+start-server.cmd 8322      # 也可指定端口
 ```
 
-也可以直接双击 `index.html`（纯静态、无构建）。
-注意：在 `file://` 协议下，浏览器会禁用 `navigator.clipboard` 与 `localStorage`，
-此时「复制」会走 `execCommand` 回退方案、「保存到本地」不可用，但「导出 HTML」始终可用。
+启动后窗口会一直开着并打印地址，浏览器打开 <http://127.0.0.1:8321/index.html> 即可；
+按 `Ctrl+C` 停止。服务实现见 `tools/serve.ps1`（`HttpListener`，支持 MIME 识别、
+404、目录默认 `index.html`、路径穿越防护；同时注册 `localhost` 与 `127.0.0.1` 两个前缀）。
+
+> 为什么不用 `python -m http.server`：本机 PATH 里的 `python` 往往是
+> `…\AppData\Local\Microsoft\WindowsApps\python.exe` —— 微软商店的占位程序而非解释器，
+> 运行后要么打开应用商店要么直接退出，表现就是「双击了没反应」。
+
+**方式二：任意静态服务器**
+
+```bash
+python -m http.server 8321 --bind 127.0.0.1
+# 或 npx serve .
+```
+
+**方式三：直接双击 `index.html`**（纯静态、无构建）。
+注意：在 `file://` 协议下浏览器会禁用 `navigator.clipboard` 与 `localStorage`，
+此时「复制」走 `execCommand` 回退、「保存到本地」不可用，但「导出 HTML」始终可用。
 
 **URL 参数**
 
@@ -42,8 +58,10 @@ python -m http.server 8321 --bind 127.0.0.1
 ```
 wangeditor-app/
 ├── index.html                  应用入口：顶栏（模式切换 + 操作区）/ 主区 / 状态栏 / 模态框
-├── start-server.cmd            Windows 一键启动本地静态服务
-├── _selftest.html              自动化自检页（在 iframe 中加载 index.html 并断言 64 项）
+├── start-server.cmd            Windows 一键启动本地静态服务（无需 Python / Node）
+├── tools/
+│   └── serve.ps1               零依赖静态文件服务（HttpListener）
+├── _selftest.html              自动化自检页（在 iframe 中加载 index.html 并断言 65 项）
 ├── README.md                   本文档
 │
 ├── css/
@@ -69,10 +87,10 @@ wangeditor-app/
 │   └── style.css               官方样式
 │
 ├── samples/
-│   ├── export-sample-default.html  「默认模式」导出产物示例（朴素白底文档）
-│   ├── export-sample-qqdoc.html    「仿腾讯文档」导出产物示例（灰底 + 850px 白纸）
-│   └── export-sample-empty.html    空文档导出示例（无任何注入文案）
-└── _shots/                     两种模式、导出效果与自检结果的验证截图
+│   ├── export-sample-default.html  「默认模式」导出产物示例（纯内容，43 行 / 1.5 KB）
+│   ├── export-sample-qqdoc.html    「仿腾讯文档」导出产物示例（完整文档，灰底 + 850px 白纸）
+│   └── export-sample-empty.html    空文档导出示例（外壳 9 行，无任何注入文案）
+└── _shots/                     两种模式、导出效果、全屏与自检结果的验证截图
 ```
 
 **加载顺序**（全部为传统 `<script>`，无模块、无构建，保证 `file://` 双击可用）：
@@ -181,41 +199,58 @@ switchMode(nextModeId)
   「网络图片」「插入视频」按 URL 输入，开箱即用。
 - **调试入口**：`window.App.switchMode('qqdoc')`、`window.App.state`、`window.App.errors`。
 
-### 4.1 导出规则：内容一致 + 模式独立
+### 4.1 导出规则：两种模式各按定位导出
 
-「预览」与「导出 HTML」共用同一个 `AppExporter.buildDocument({ html, mode })`，遵循两条硬规则。
+「预览」与「导出 HTML」共用 `AppExporter.buildDocument({ html, mode })`。
+两个模式走**两条不同的导出策略**，由 `MODE_SKINS[mode].bare` 开关分派。
 
-**① 导出内容 = 编辑器内容，不做任何注入**
+**① 默认模式 = 纯内容导出（`bare: true`）**
+
+整个文件只有 6 行外壳，其余全是编辑器正文：
+
+```html
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+</head>
+<body data-mode="default">
+…editor.getHtml() 原样输出…
+</body>
+</html>
+```
+
+| 不注入的东西 | 原因 |
+| --- | --- |
+| `<style>` 块 | 纯内容导出，排版交给目标站点（博客 / BBS 后台）的样式 |
+| `generator` / `source-mode` / `exported-at` 等 `<meta>` | 导出内容里不需要这类元信息 |
+| `<article class="doc …">` 包装节点 | 只需要一个 `<body>` |
+| 空 `<title>` | 没有标题就不输出该节点 |
+
+保留三样是**功能性必需**，不是装饰：`<!DOCTYPE html>`（避免浏览器进入怪异模式）、
+`<meta charset="UTF-8">`（没有它中文可能乱码）、`<body>`。
+
+**② 仿腾讯文档模式 = 完整文档导出**
+
+保留完整 `<head>`（viewport / meta / 内嵌样式）与 `<article class="doc doc--qqdoc">` 外壳，
+双击即还原「浅灰画布 + 850px 白色纸张」，样式块内已含中文友好的排版规则与
+`word-wrap:break-word; overflow-wrap:break-word`（超长英文 / 链接会像编辑器里一样换行）。
+
+**③ 两种模式仍然各自独立**
+
+两份导出文件的差异是结构性的（一个有样式块与外壳、一个没有），
+并且都带 `<body data-mode="default|qqdoc">`，便于再次导入时识别来源模式 ——
+`js/app.js` 的 `extractImport()` 会优先取 `article.doc` 的 innerHTML，没有该节点则直接取 `<body>`。
+
+**④ 共同规则：正文零注入**
 
 | 项 | 行为 |
 | --- | --- |
-| 正文 | 原样来自 `editor.getHtml()`，不包装、不改写、不加标题、不追加页脚 |
-| 生成器 / 来源模式 / 导出时间 | 只写进 `<head>` 的 `<meta>`（`generator` / `source-mode` / `exported-at`），**不进正文** |
-| 空文档 | 导出结果就是一张空白纸（正文即 `<p><br></p>`），不出现「未命名文档」之类占位文案 |
+| 正文 | 原样来自 `editor.getHtml()`，不包装、不改写、不追加页脚 |
+| 空文档 | 导出结果就是 `<p><br></p>`，不出现「未命名文档」之类占位文案 |
 
-> `buildDocument()` 另支持一个可选的 `title` 参数（传入则在正文顶部输出 `<h1 class="doc-title">`）。
-> 当前两个模式都没有标题栏，应用**不会**传它 —— 所以导出结果 = 模式外壳 + 编辑器正文。
-> 保留该参数，是为了后续单独给某个模式加标题栏时无须改动导出层。
-
-**② 两种模式各自独立**
-
-正文由各自的文档决定（模式之间不传递），**文档外壳与版式**也按模式分派：
-
-| | 默认模式 | 仿腾讯文档 |
-| --- | --- | --- |
-| 外层节点 | `<article class="doc doc--default">` | `<article class="doc doc--qqdoc">` |
-| `<body>` 标识 | `data-mode="default"` | `data-mode="qqdoc"` |
-| 背景 | 纯白 `#fff`，无卡片装饰 | 浅灰 `#f2f2f2` 画布 |
-| 内容区 | **左侧自然对齐**，max-width 920px，舒适页边距（40px / 48px），避免大段居中空白 | 居中 **850px 白色纸张** + `0 2px 10px rgba(0,0,0,.12)` 阴影（与编辑器内纸张同尺寸） |
-
-导出的文件保留 `data-mode`，便于再次导入 / 二次加工时识别来源模式。
-
-**③ 超长文本自动换行**
-
-wangEditor 编辑区对 `[data-slate-editor]` 设置了 `word-wrap:break-word; white-space:pre-wrap`，
-所以长英文单词 / 长链接在编辑器里会自动换行。导出 HTML 通过 `BASE_CSS` 给 `p, li, td, th, h1~h5`
-补上同样的 `word-wrap:break-word; overflow-wrap:break-word`，保证导出的阅读态不会溢出屏幕。
-实现见 `js/features/exporter.js` 的 `MODE_SKINS`（`BASE_CSS` 为两模式共享的排版规则）。
+> `buildDocument()` 另支持可选的 `title` 参数（传入才输出 `<h1>`）。
+> 当前两个模式都没有标题栏，应用**不会**传它，保留该参数是为了后续单独给某个模式加标题栏时无须改导出层。
 
 > 历史问题：早期版本会在正文写死一行 `wangEditor v5 · …模式 · 导出于 …` 水印，并把空标题填成「未命名文档」；
 > 同时 `buildDocument()` 只有一套外壳，`mode` 仅用于拼那句水印，导致两种模式导出的 HTML 除该句外完全一致。
@@ -230,16 +265,17 @@ wangEditor 编辑区对 `[data-slate-editor]` 设置了 `word-wrap:break-word; w
 # 浏览器打开 http://127.0.0.1:8321/_selftest.html
 ```
 
-自检页在 `<iframe>` 中加载真实的 `index.html?demo=1`，跨模式断言 64 项，覆盖：
+自检页在 `<iframe>` 中加载真实的 `index.html?demo=1`，跨模式断言 65 项，覆盖：
 依赖与初始化、默认模式的 DOM 与 `scroll: true`、`setHtml/getHtml` 往返、统计口径、
 **导出内容一致性**（空文档不注入「未命名文档」、无水印行、正文与 `getHtml()` 逐字一致）与
-**导出模式独立性**（两模式导出互不相同、外壳 `doc--default` / `doc--qqdoc`、`data-mode`、
-白底 vs 灰底 + 850px 纸张各自正确、默认导出左侧对齐、超长文本带换行样式）、
+**导出模式独立性**（两模式导出互不相同、默认模式无 `<style>` / 无 `<article>` / 外壳≤10 行、
+qqdoc 保留 `doc--qqdoc` 外壳与灰底 + 850px 白纸、`data-mode` 各自正确、
+qqdoc 样式含超长文本换行规则）、
 localStorage 增删查、**模式内容独立性**（qqdoc 有自己的内容、默认模式的编辑不进入 qqdoc、
 切回后各自内容仍在、自动草稿按模式分 key 存储）、qqdoc 纸张内**无**标题栏、纸张宽度 850px /
 工具栏背景 `#FCFCFC` / 按钮数 41 → 40（仅差 fullScreen）/ `scroll: false`、
 模式按钮上无「对齐xxx示例」注释、实例隔离、剪贴板 API、运行期无未捕获错误。
-当前结果：**64 passed / 0 failed**。
+当前结果：**65 passed / 0 failed**。
 
 ---
 
@@ -256,6 +292,12 @@ localStorage 增删查、**模式内容独立性**（qqdoc 有自己的内容、
   `.w-e-text-container` / `.w-e-scroll` 的高度改为 `auto`，让白色纸张随内容自然增长（版式更接近在线文档）。
 - 编辑区默认高度按官方取 500px，屏幕较高时（`min-height: 960px`）放宽到 620px；
   「固定高度 + 内部滚动」的交互模型不变。
+- **默认模式的导出是纯内容、不带任何样式**（按需求如此设计）。因此把导出的 `.html` 单独双击打开时，
+  渲染用的是浏览器默认样式：观感朴素，且**超长英文单词 / 长 URL 不会被断开**（浏览器默认
+  `overflow-wrap: normal`），窗口较窄时会向右溢出。这是「零样式导出」的固有取舍 ——
+  正文贴进博客 / BBS 后由站点的样式接管，通常不存在该问题。若希望独立打开也不溢出，
+  在 `js/features/exporter.js` 的 `buildDocument()` 里给 `<body>` 加一个属性即可：
+  `<body data-mode="default" style="overflow-wrap:break-word">`。
 - 图片 / 视频以 base64 内嵌，适合单文档场景；若用于生产环境，建议给 `MENU_CONF.uploadImage.server`
   配置上传接口替换 `customUpload`。
 - 存档保存在浏览器 localStorage，会受配额限制（含大量 base64 图片时可能写失败并提示「超配额」）；
